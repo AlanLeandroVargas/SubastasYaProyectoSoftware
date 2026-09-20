@@ -49,6 +49,15 @@ internal sealed class AuctionRepository : IAuctionRepository
             .ThenInclude(bid => bid.Bidder)
             .FirstOrDefaultAsync(auction => auction.Id == id, cancellationToken);
 
+    /// <summary>
+    /// Carga la subasta <b>con</b> seguimiento de cambios, porque la puja va a modificarla.
+    /// No incluye el historial de ofertas: el agregado ya conserva el importe líder y la
+    /// cantidad de pujas, así que traerlo entero sería pagar por datos que nadie va a usar.
+    /// </summary>
+    public async Task<Auction?> GetForUpdateAsync(int id, CancellationToken cancellationToken = default) =>
+        await _context.Auctions
+            .FirstOrDefaultAsync(auction => auction.Id == id, cancellationToken);
+
     private static IQueryable<Auction> ApplyFilters(IQueryable<Auction> query, AuctionFilter filter)
     {
         if (filter.Status is not null)

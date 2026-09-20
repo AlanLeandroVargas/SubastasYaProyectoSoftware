@@ -4,6 +4,7 @@ using SubastaYa.Application.Abstractions.Time;
 using SubastaYa.Application.Dtos;
 using SubastaYa.Application.Mapping;
 using SubastaYa.Domain.Entities;
+using SubastaYa.Domain.Enums;
 using SubastaYa.Domain.Exceptions;
 using SubastaYa.Domain.Rules;
 
@@ -21,17 +22,20 @@ public sealed class WalletService : IWalletService
 
     private readonly IWalletRepository _wallets;
     private readonly ILedgerRepository _ledger;
+    private readonly IAuditRepository _auditRecords;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IClock _clock;
 
     public WalletService(
         IWalletRepository wallets,
         ILedgerRepository ledger,
+        IAuditRepository auditRecords,
         IUnitOfWork unitOfWork,
         IClock clock)
     {
         _wallets = wallets;
         _ledger = ledger;
+        _auditRecords = auditRecords;
         _unitOfWork = unitOfWork;
         _clock = clock;
     }
@@ -45,9 +49,9 @@ public sealed class WalletService : IWalletService
 
     /// <summary>
     /// Acredita fondos simulados.
-    /// El nuevo saldo y su asiento se confirman con un único guardado: la unidad de trabajo los
-    /// vuelca en una sola operación atómica, así que no existe la posibilidad de que el dinero
-    /// entre sin dejar rastro ni de que quede un asiento sin respaldo.
+    /// El nuevo saldo, su asiento y el registro de auditoría se confirman con un único guardado:
+    /// la unidad de trabajo los vuelca en una sola operación atómica, así que no existe la
+    /// posibilidad de que el dinero entre sin dejar rastro ni de que quede un asiento sin respaldo.
     /// </summary>
     public async Task<BalanceDto> CreditAsync(
         int userId,
@@ -58,8 +62,17 @@ public sealed class WalletService : IWalletService
 
         var wallet = await GetWalletAsync(userId, cancellationToken);
 
+        var now = _clock.UtcNow;
+
         wallet.Credit(request.Amount);
-        _ledger.Add(LedgerEntry.Deposit(wallet.Id, request.Amount, _clock.UtcNow));
+        _ledger.Add(LedgerEntry.Deposit(wallet.Id, request.Amount, now));
+        _auditRecords.Add(AuditRecordFactory.Create(
+            AuditedEntity.Wallet,
+            wallet.Id,
+            AuditAction.ManualWalletCredit,
+            userId,
+            new { amount = request.Amount, resultingTotalBalance = wallet.TotalBalance },
+            now));
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 

@@ -25,6 +25,8 @@ public sealed class SubastaYaDbContext : DbContext
 
     public DbSet<LedgerEntry> LedgerEntries => Set<LedgerEntry>();
 
+    public DbSet<AuditRecord> AuditRecords => Set<AuditRecord>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         builder.ApplyConfigurationsFromAssembly(typeof(SubastaYaDbContext).Assembly);

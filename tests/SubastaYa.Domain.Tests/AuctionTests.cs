@@ -140,6 +140,37 @@ public class AuctionTests
         Assert.Throws<StateConflictException>(() => auction.PlaceBid(BidderId, 10_000m, Now.AddMinutes(6)));
     }
 
+    // --- Admisión previa ----------------------------------------------------
+
+    [Fact]
+    public void EnsureBidIsAdmissible_DoesNotMutateTheAuction()
+    {
+        var auction = CreateActiveAuction(startingPrice: 10_000m, minimumIncrement: 1_000m);
+        auction.PlaceBid(BidderId, 10_000m, Now);
+
+        var closingBefore = auction.EndsAt;
+
+        auction.EnsureBidIsAdmissible(OtherBidderId, 11_000m, Now);
+
+        // El caso de uso valida antes de tocar las billeteras y confía en que esta comprobación
+        // no deje al agregado a medio modificar si después falla el saldo.
+        Assert.Equal(10_000m, auction.CurrentAmount);
+        Assert.Equal(BidderId, auction.LeadingBidderId);
+        Assert.Equal(1, auction.BidCount);
+        Assert.Equal(closingBefore, auction.EndsAt);
+    }
+
+    [Fact]
+    public void EnsureBidIsAdmissible_RejectsWhatPlaceBidWouldReject()
+    {
+        var auction = CreateActiveAuction(startingPrice: 10_000m, minimumIncrement: 1_000m);
+        auction.PlaceBid(BidderId, 10_000m, Now);
+
+        Assert.Throws<ValidationException>(() => auction.EnsureBidIsAdmissible(OtherBidderId, 10_500m, Now));
+        Assert.Throws<AuthorizationException>(() => auction.EnsureBidIsAdmissible(SellerId, 50_000m, Now));
+        Assert.Throws<StateConflictException>(() => auction.EnsureBidIsAdmissible(BidderId, 20_000m, Now));
+    }
+
     // --- Regla anti-sniping -------------------------------------------------
 
     [Fact]

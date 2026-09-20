@@ -20,4 +20,16 @@ internal sealed class WalletRepository : IWalletRepository
     public async Task<Wallet?> GetByUserAsync(int userId, CancellationToken cancellationToken = default) =>
         await _context.Wallets
             .FirstOrDefaultAsync(wallet => wallet.UserId == userId, cancellationToken);
+
+    /// <summary>
+    /// Incluye al usuario porque la difusión del evento necesita su seudónimo, y resolverlo
+    /// después obligaría a una segunda consulta dentro de la misma transacción.
+    /// </summary>
+    public async Task<IReadOnlyList<Wallet>> GetByUsersAsync(
+        IReadOnlyCollection<int> userIds,
+        CancellationToken cancellationToken = default) =>
+        await _context.Wallets
+            .Include(wallet => wallet.User)
+            .Where(wallet => userIds.Contains(wallet.UserId))
+            .ToListAsync(cancellationToken);
 }

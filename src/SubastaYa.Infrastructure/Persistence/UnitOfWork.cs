@@ -32,4 +32,39 @@ internal sealed class UnitOfWork : IUnitOfWork
                 "Otra operación modificó el mismo registro mientras se procesaba esta petición. Es necesario reintentar.");
         }
     }
+
+    public async Task<TResult> ExecuteInTransactionAsync<TResult>(
+        Func<CancellationToken, Task<TResult>> operation,
+        CancellationToken cancellationToken = default)
+    {
+        // Si ya hay una transacción abierta se la reutiliza: el caso de uso externo es el dueño
+        // de la frontera transaccional y decide cuándo confirmar.
+        if (_context.Database.CurrentTransaction is not null)
+        {
+            return await operation(cancellationToken);
+        }
+
+        await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+
+        try
+        {
+            var result = await operation(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            return result;
+        }
+        catch
+        {
+            // Reversión completa: saldos, pujas, libro mayor y auditoría vuelven a su estado previo.
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Vacía el rastreador de cambios. Después de una reversión el contexto conserva en memoria
+    /// entidades modificadas que ya no se corresponden con la base; reutilizarlo sin limpiarlo
+    /// haría que el siguiente guardado intentara reaplicarlas.
+    /// </summary>
+    public void DiscardPendingChanges() => _context.ChangeTracker.Clear();
 }
