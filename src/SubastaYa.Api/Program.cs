@@ -26,6 +26,11 @@ app.UseSwaggerUI(options =>
     options.RoutePrefix = "swagger";
 });
 
+// El frontend se sirve como contenido estático desde la propia API: una sola cosa que
+// levantar y un solo origen, así que la aplicación no depende de CORS para funcionar.
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 app.UseCors(WebServiceRegistration.CorsPolicyName);
 app.UseAuthentication();
 app.UseAuthorization();
