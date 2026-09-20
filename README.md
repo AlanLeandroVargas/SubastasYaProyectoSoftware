@@ -70,6 +70,7 @@ modificar el estado por fuera de estos métodos.
 | `Bid` | Oferta inmutable: una vez creada forma parte del historial y no se modifica. |
 | `User` | Participante; nace siempre con su billetera asociada. |
 | `Category` | Clasificación temática del catálogo. |
+| `LedgerEntry` | Asiento inmutable del libro mayor: todo movimiento de saldo deja su huella. |
 
 ### Reglas implementadas
 
@@ -83,6 +84,9 @@ modificar el estado por fuera de estos métodos.
   minuto y no puede publicarse una subasta que ya venció.
 * **Garantías (escrow)**: `AvailableBalance = TotalBalance - HeldBalance`. No se puede congelar
   más de lo disponible ni liberar más de lo retenido.
+* **Trazabilidad contable**: todo movimiento de saldo deja un asiento, de modo que el saldo
+  siempre pueda reconstruirse sumando el historial. Los asientos son inmutables: una
+  corrección se expresa con un asiento nuevo, nunca editando el anterior.
 
 Los estados de la subasta son `Scheduled`, `Active`, `Completed` y `Unsold`. El dominio **no mueve
 dinero por su cuenta**: `PlaceBid` devuelve un `BidPlacementResult` con el postor superado y el
@@ -90,9 +94,9 @@ monto a liberar, para que el caso de uso lo resuelva dentro de una transacción 
 
 ### Preparación para la concurrencia
 
-`Auction` y `Wallet` exponen una propiedad `Version` que la capa de persistencia mapeará como
-`rowversion`. Es el mecanismo de **bloqueo optimista** exigido por la consigna: se modela desde el
-dominio aunque todavía no haya base de datos.
+`Auction` y `Wallet` exponen una propiedad `Version` que la capa de persistencia mapea como
+`rowversion`. Es el mecanismo de **bloqueo optimista** exigido por la consigna. Se modeló desde el
+dominio antes de que existiera la base de datos, y hoy ya protege los movimientos de saldo.
 
 ---
 
@@ -102,11 +106,12 @@ dominio aunque todavía no haya base de datos.
 dotnet test
 ```
 
-34 pruebas unitarias cubren las invariantes del negocio sin tocar infraestructura: incremento
+39 pruebas unitarias cubren las invariantes del negocio sin tocar infraestructura: incremento
 mínimo, ventana anti-sniping (45 s extiende, 60 s extiende, 61 s no), puja del vendedor en su
 propia subasta, puja del postor que ya lidera, subasta programada o vencida, transiciones a
-`Completed` / `Unsold`, y las reglas de la billetera (retención, liberación, liquidación y
-traspaso de liderazgo entre postores).
+`Completed` / `Unsold`, las reglas de la billetera (retención, liberación, liquidación y
+traspaso de liderazgo entre postores) y el libro mayor, incluida la prueba de que los asientos
+reconstruyen exactamente el saldo de la billetera.
 
 ---
 
@@ -123,6 +128,9 @@ URLs. Base: `/api/v1`.
 | `GET` | `/categories` | — | Listado de categorías |
 | `GET` | `/auctions` | — | Catálogo con filtros, orden y paginación |
 | `GET` | `/auctions/{id}` | — | Detalle de la subasta con su historial de ofertas |
+| `GET` | `/wallets/me` | ✔ | Saldo total, retenido y disponible |
+| `POST` | `/wallets/me/deposits` | ✔ | Acreditar fondos simulados |
+| `GET` | `/wallets/me/transactions` | ✔ | Historial de movimientos |
 
 **Filtros de `GET /auctions`**: `status` (`Active` · `Scheduled` · `Completed` · `Unsold`),
 `categoryId`, `minPrice`, `maxPrice`, `search`, `sort` (`EndingSoonest` · `HighestBid` ·
@@ -191,11 +199,68 @@ Todas usan la contraseña **`Password123!`**.
 | `comprador2@test.com` | Ganador pendiente de liquidación |
 | `sinfondos@test.com` | Servirá para probar el rechazo por saldo |
 
-> Si ya tenías la base creada de antes, hay que **regenerarla** para que los usuarios queden con
-> su hash de contraseña; hasta esta funcionalidad se sembraban sin credenciales:
+> Si ya tenías la base creada de antes, hay que **regenerarla**. La semilla sólo corre sobre una
+> base vacía, así que un esquema viejo se queda sin el hash de las contraseñas y sin los asientos
+> del libro mayor:
 > ```bash
 > dotnet ef database drop --force --project src/SubastaYa.Infrastructure --startup-project src/SubastaYa.Api
 > ```
+
+---
+
+## Billetera y libro mayor
+
+Cada usuario tiene una billetera con tres cifras: **total**, **retenido** y **disponible**. El
+disponible es siempre `total - retenido` y **no se persiste**: es lo único que puede gastarse.
+
+Toda alteración del saldo deja un **asiento** en el libro mayor. La consecuencia práctica es que
+el saldo nunca es un número sin explicación: sumando el historial se lo reconstruye entero, y
+cualquier diferencia delata un error.
+
+| Tipo de asiento | Cuándo se registra |
+|---|---|
+| `Deposit` | Acreditación manual de fondos simulados |
+| `Hold` | El usuario pasa a liderar una subasta y su garantía queda congelada |
+| `Release` | El usuario es superado y su garantía vuelve al disponible |
+
+Los tipos `Payment` y `Payout` (débito del comprador y acreditación al vendedor) llegan con la
+adjudicación, que todavía no existe.
+
+### Decisiones
+
+* **`me` en lugar del identificador**: no hay ninguna ruta que acepte el identificador de una
+  billetera ajena, así que consultar el saldo de otro no es una cuestión de permisos sino de
+  rutas que no existen.
+* **Saldo y asiento en un único guardado**: la unidad de trabajo vuelca ambos cambios en una sola
+  operación atómica. No hay forma de que el dinero entre sin dejar rastro ni de que quede un
+  asiento sin respaldo, ni siquiera si el proceso muere en el medio.
+* **Importes siempre positivos**: el signo lo aporta el tipo de asiento, no el número. Eso permite
+  que la base exija `Amount > 0` para todo movimiento.
+* **Tope por operación**: `AuctionRules.MaximumDepositPerOperation` ($10.000.000) es una política
+  de la plataforma, por eso vive junto al resto de los parámetros de negocio y no dentro de
+  `Wallet`, que sólo conoce la invariante de que el monto debe ser positivo.
+* **`IUnitOfWork` expone hoy sólo `SaveChangesAsync`**: un único guardado de EF Core ya es
+  atómico, así que abrir una transacción explícita acá sería ceremonia sin efecto. La transacción
+  explícita aparecerá cuando el registro de pujas necesite tocar dos billeteras y una subasta.
+
+### Conflictos de concurrencia
+
+`Wallets.Version` es un `rowversion`, así que dos movimientos simultáneos sobre la misma billetera
+no pueden pisarse: el más lento falla y la API responde **409**. La unidad de trabajo traduce el
+`DbUpdateConcurrencyException` de EF Core a una excepción del dominio, de modo que la capa de
+aplicación reacciona al conflicto sin conocer el ORM.
+
+Verificado con 24 depósitos disparados en el mismo instante sobre una misma billetera: 7
+aceptados, 17 rechazados con 409, y el saldo final exactamente igual a la suma de los aceptados.
+Sin el bloqueo optimista habría actualizaciones perdidas.
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:5080/api/v1/sessions   -H "Content-Type: application/json"   -d '{"email":"comprador1@test.com","password":"Password123!"}'   | python -c "import sys,json;print(json.load(sys.stdin)['token'])")
+
+curl -s http://localhost:5080/api/v1/wallets/me -H "Authorization: Bearer $TOKEN"
+curl -s -X POST http://localhost:5080/api/v1/wallets/me/deposits   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json"   -d '{"amount":50000}'
+curl -s "http://localhost:5080/api/v1/wallets/me/transactions?count=20"   -H "Authorization: Bearer $TOKEN"
+```
 
 ---
 
@@ -218,6 +283,7 @@ dependencias.
 | `Categories` | Clasificación del catálogo, con `Name` único. |
 | `Auctions` | Subastas. `Status` se guarda como texto legible. |
 | `Bids` | Historial de ofertas, con índice `(AuctionId, Amount)`. |
+| `LedgerEntries` | Libro mayor de las billeteras, con índice `(WalletId, OccurredAt)`. |
 
 **Integridad garantizada por el motor**, no sólo por el código:
 
@@ -228,9 +294,11 @@ dependencias.
 | `CK_Auctions_Schedule` | Auctions | `EndsAt > StartsAt` |
 | `CK_Auctions_BidCount` | Auctions | `BidCount >= 0` |
 | `CK_Bids_PositiveAmount` | Bids | `Amount > 0` |
+| `CK_LedgerEntries_PositiveAmount` | LedgerEntries | `Amount > 0` |
 
 `Auctions.Version` y `Wallets.Version` se mapean como **`rowversion`**: es el soporte del bloqueo
-optimista que usará el registro de pujas.
+optimista. `Wallets.Version` ya está en uso por los depósitos; `Auctions.Version` entra en juego
+con el registro de pujas.
 
 `AvailableBalance` **no se persiste**: es un dato derivado (`TotalBalance - HeldBalance`) que
 calcula el dominio. Almacenarlo introduciría un tercer valor que podría quedar desincronizado.
@@ -264,6 +332,10 @@ minutos") y una semilla estática quedaría obsoleta apenas se genera.
 
 Todas las cuentas comparten la contraseña `Password123!`, ya hasheada con PBKDF2 por el
 sembrador.
+
+La semilla escribe además los **asientos** que justifican cada saldo: el depósito inicial y las
+retenciones y liberaciones de las pujas históricas. Por eso el historial de movimientos tiene
+contenido desde el primer arranque y reconstruye exactamente los saldos de la tabla de arriba.
 
 ### Subastas (casos de prueba de la consigna)
 
@@ -336,7 +408,7 @@ El desarrollo avanza por funcionalidad, una por *pull request*.
 - [x] Catálogo de subastas (API de lectura)
 - [x] Persistencia con EF Core, migraciones y datos semilla
 - [x] Autenticación con JWT
-- [ ] Billetera virtual y libro mayor
+- [x] Billetera virtual y libro mayor
 - [ ] Registro de pujas con garantías atómicas y bloqueo optimista
 - [ ] Proceso en segundo plano de adjudicación
 - [ ] Sincronización en tiempo real
@@ -356,8 +428,8 @@ SubastasYaProyectoSoftware/
 │   └── SubastaYa.Domain.Tests/      # Pruebas unitarias del dominio (xUnit)
 └── src/
     ├── SubastaYa.Domain/
-    │   ├── Entities/                # Auction, Wallet, Bid, User, Category
-    │   ├── Enums/                   # AuctionStatus
+    │   ├── Entities/                # Auction, Wallet, LedgerEntry, Bid, User, Category
+    │   ├── Enums/                   # AuctionStatus, LedgerEntryType
     │   ├── Exceptions/              # Jerarquía de errores de negocio
     │   ├── Rules/                   # Parámetros de anti-sniping
     │   └── Results/                 # BidPlacementResult

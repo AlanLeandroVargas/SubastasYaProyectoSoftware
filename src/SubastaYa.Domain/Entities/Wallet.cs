@@ -9,6 +9,8 @@ namespace SubastaYa.Domain.Entities;
 /// </summary>
 public class Wallet
 {
+    private readonly List<LedgerEntry> _ledgerEntries = new();
+
     private Wallet()
     {
         // Constructor requerido por EF Core para la materialización.
@@ -48,6 +50,12 @@ public class Wallet
     /// que dos movimientos simultáneos sobre la misma billetera no puedan pisarse.
     /// </summary>
     public byte[] Version { get; private set; }
+
+    /// <summary>
+    /// Libro mayor de la billetera. Es de sólo lectura hacia afuera: los asientos se agregan
+    /// desde el caso de uso que mueve el saldo, dentro de la misma transacción.
+    /// </summary>
+    public IReadOnlyCollection<LedgerEntry> LedgerEntries => _ledgerEntries.AsReadOnly();
 
     /// <summary>Acredita fondos simulados en la cuenta.</summary>
     public void Credit(decimal amount)

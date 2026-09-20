@@ -15,4 +15,7 @@ public static class AuctionRules
 
     /// <summary>Duración mínima admitida entre el inicio y el fin de una subasta.</summary>
     public static readonly TimeSpan MinimumDuration = TimeSpan.FromMinutes(1);
+
+    /// <summary>Importe máximo admitido en una sola acreditación manual de fondos simulados.</summary>
+    public const decimal MaximumDepositPerOperation = 10_000_000m;
 }

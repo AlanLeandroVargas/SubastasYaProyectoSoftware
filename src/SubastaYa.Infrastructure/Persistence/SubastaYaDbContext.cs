@@ -23,6 +23,8 @@ public sealed class SubastaYaDbContext : DbContext
 
     public DbSet<Bid> Bids => Set<Bid>();
 
+    public DbSet<LedgerEntry> LedgerEntries => Set<LedgerEntry>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         builder.ApplyConfigurationsFromAssembly(typeof(SubastaYaDbContext).Assembly);
