@@ -53,6 +53,7 @@ public sealed class GlobalExceptionMiddleware
     private static ProblemDetails ToProblemDetails(DomainException exception) => exception switch
     {
         ValidationException => Build(StatusCodes.Status400BadRequest, "Solicitud inválida", exception.Message),
+        InvalidCredentialsException => Build(StatusCodes.Status401Unauthorized, "Credenciales inválidas", exception.Message),
         AuthorizationException => Build(StatusCodes.Status403Forbidden, "Operación no permitida", exception.Message),
         ResourceNotFoundException => Build(StatusCodes.Status404NotFound, "Recurso inexistente", exception.Message),
         StateConflictException => Build(StatusCodes.Status409Conflict, "Conflicto con el estado actual", exception.Message),

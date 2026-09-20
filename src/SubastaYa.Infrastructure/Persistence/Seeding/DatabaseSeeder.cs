@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using SubastaYa.Application.Abstractions.Security;
 using SubastaYa.Application.Abstractions.Time;
 using SubastaYa.Domain.Entities;
 
@@ -15,12 +16,17 @@ namespace SubastaYa.Infrastructure.Persistence.Seeding;
 /// </summary>
 internal sealed class DatabaseSeeder
 {
+    /// <summary>Contraseña compartida por todas las cuentas de prueba.</summary>
+    private const string DemoPassword = "Password123!";
+
     private readonly SubastaYaDbContext _context;
+    private readonly IPasswordHasher _passwordHasher;
     private readonly IClock _clock;
 
-    public DatabaseSeeder(SubastaYaDbContext context, IClock clock)
+    public DatabaseSeeder(SubastaYaDbContext context, IPasswordHasher passwordHasher, IClock clock)
     {
         _context = context;
+        _passwordHasher = passwordHasher;
         _clock = clock;
     }
 
@@ -215,13 +221,9 @@ internal sealed class DatabaseSeeder
         ForceClosingDate(auction, now.AddMinutes(-5));
     }
 
-    /// <summary>
-    /// Crea un usuario de prueba.
-    /// El hash de contraseña queda vacío a propósito: la autenticación llega en su propia
-    /// funcionalidad y hasta entonces el catálogo es completamente público.
-    /// </summary>
-    private static User CreateUser(string email, string name, string pseudonym, DateTime now) =>
-        new(email, name, pseudonym, passwordHash: string.Empty, registeredAt: now);
+    /// <summary>Crea un usuario de prueba con la contraseña de demostración ya hasheada.</summary>
+    private User CreateUser(string email, string name, string pseudonym, DateTime now) =>
+        new(email, name, pseudonym, _passwordHasher.Hash(DemoPassword), now);
 
     /// <summary>
     /// Reproduce una puja histórica respetando las mismas reglas de garantía que aplicará el caso
