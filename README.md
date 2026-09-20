@@ -142,6 +142,7 @@ URLs. Base: `/api/v1`.
 | `POST` | `/wallets/me/deposits` | ✔ | Acreditar fondos simulados |
 | `GET` | `/wallets/me/transactions` | ✔ | Historial de movimientos |
 | `GET` | `/audit-logs` | ✔ | Traza de auditoría, de sólo lectura |
+| `WS` | `/hubs/auctions` | — | Canal SignalR de la sala en vivo |
 
 **Filtros de `GET /auctions`**: `status` (`Active` · `Scheduled` · `Completed` · `Unsold`),
 `categoryId`, `minPrice`, `maxPrice`, `search`, `sort` (`EndingSoonest` · `HighestBid` ·
@@ -325,15 +326,10 @@ llegar al dominio y no se audita: es una petición mal formada, no una decisión
 > la migración sobre una base ya poblada y volviéndola a aplicar: las 5 subastas, los 4 usuarios y
 > sus asientos quedaron intactos y la auditoría arrancó vacía, que es lo correcto.
 
-### Difusión en tiempo real: puerto declarado, transporte pendiente
+### Difusión en tiempo real
 
 `IAuctionNotifier` es el puerto hacia la sala en vivo. La capa de aplicación publica el evento sin
-saber qué hay por debajo, y hoy lo satisface `LoggingAuctionNotifier`, que **deja el evento en el
-log en lugar de empujarlo a los clientes**.
-
-No es relleno: hace observable qué se habría difundido, que es exactamente lo que después habrá
-que ver llegar a la sala. Cuando entre SignalR, el reemplazo se limita a registrar otra
-implementación del mismo puerto; ni el servicio de pujas ni el dominio se enteran.
+saber qué hay por debajo; el transporte concreto se describe en su propia sección más abajo.
 
 La difusión ocurre **fuera** de la transacción: anunciar una puja antes de confirmarla podría
 publicar una oferta que después se revierte.
@@ -443,6 +439,68 @@ congelada era exactamente lo que faltaba adjudicar.
 
 En todo momento el dinero se conserva: la suma de los saldos del sistema es igual a la suma de lo
 depositado. Una liquidación mueve dinero entre billeteras, nunca lo crea ni lo destruye.
+
+---
+
+## Tiempo real con SignalR
+
+El canal vive en `/hubs/auctions` y **cada subasta tiene su propio grupo**. Una puja se difunde
+sólo a quienes están mirando esa sala: sin esa separación, abrir el catálogo implicaría recibir el
+tráfico de todas las subastas activas a la vez.
+
+| Método del hub | Efecto |
+|---|---|
+| `JoinRoom(auctionId)` | El cliente empieza a recibir los eventos de esa subasta |
+| `LeaveRoom(auctionId)` | Deja de recibirlos |
+
+| Evento | Cuándo llega | Contenido |
+|---|---|---|
+| `BidPlaced` | Se aceptó una oferta | Importe líder, próximo mínimo, cantidad de ofertas, seudónimo, nuevo cierre y si hubo extensión |
+| `AuctionClosed` | El proceso en segundo plano cerró la subasta | Estado final, importe, ganador (nulos si quedó desierta) |
+
+El evento lleva todo lo que necesita un cliente para repintar la sala **sin volver a consultar la
+API**. En particular, `wasExtended` y `endsAtUtc` permiten recalcular el contador regresivo en el
+momento exacto en que la regla anti-sniping corre el cierre.
+
+### El reemplazo del notificador provisional
+
+La funcionalidad anterior dejó declarado `IAuctionNotifier` y lo satisfizo con una implementación
+que sólo escribía en el log. Sustituirla por el transporte real consistió en **registrar otra
+implementación del mismo puerto**: el servicio de pujas, el de cierre y el dominio no cambiaron una
+línea. El notificador provisional se eliminó junto con su carpeta, igual que en su momento se
+eliminó el repositorio en memoria al llegar EF Core.
+
+### Decisiones
+
+* **El hub no exige autenticación**, en coherencia con el resto de la lectura: el catálogo y el
+  historial de ofertas son públicos, y mirar una sala no debería pedir más permisos que verla por
+  HTTP. Para **pujar** sigue haciendo falta el token, porque eso pasa por la API REST.
+* **Un fallo al difundir no llega al usuario.** Cuando el evento se emite, la operación ya está
+  confirmada en la base. Se registra una advertencia y nada más: el cliente se resincroniza en su
+  próxima consulta. La difusión es una mejora de experiencia, no la fuente de verdad.
+* **Notificador singleton.** El `IHubContext` es seguro para uso concurrente, así que no hace falta
+  una instancia por petición aunque lo consuman servicios con alcance de petición.
+* **CORS con `AllowCredentials`.** Es obligatorio para que SignalR negocie la conexión, y obliga a
+  enumerar los orígenes: con credenciales habilitadas el navegador rechaza un comodín.
+
+```json
+"Cors": { "AllowedOrigins": ["http://localhost:5173", "http://127.0.0.1:5173"] }
+```
+
+### Verificado con un cliente real
+
+Con una página conectada al hub desde el navegador, mientras se operaba la API por separado:
+
+```
+unirse a la sala 1 · pujar en #1        → llega BidPlaced con el nuevo líder y el próximo mínimo
+pujar en otra subasta no observada      → no llega nada  (los grupos aíslan de verdad)
+pujar dentro de la ventana crítica      → llega BidPlaced con wasExtended=true y el cierre corrido
+el proceso cierra la subasta observada  → llega AuctionClosed con estado, importe y ganador
+abandonar la sala y volver a pujar      → no llega nada
+```
+
+El evento de cierre es el que más confianza da: lo emite el proceso en segundo plano, no una
+petición HTTP, y aun así llega al navegador por el mismo canal.
 
 ---
 
@@ -598,7 +656,7 @@ El desarrollo avanza por funcionalidad, una por *pull request*.
 - [x] Registro de pujas con garantías atómicas y bloqueo optimista
 - [x] Publicación de subastas
 - [x] Proceso en segundo plano de adjudicación
-- [ ] Sincronización en tiempo real (reemplaza al notificador provisional)
+- [x] Sincronización en tiempo real con SignalR
 - [ ] Frontend
 - [ ] Prueba de concurrencia
 
@@ -632,12 +690,12 @@ SubastasYaProyectoSoftware/
     │   │   ├── Migrations/          # Code-First
     │   │   ├── Repositories/
     │   │   └── Seeding/
-    │   ├── RealTime/                # Notificador provisional basado en log
     │   ├── Security/                # PBKDF2 y emisión de JWT
     │   └── Time/                    # Reloj del sistema
     └── SubastaYa.Api/
         ├── BackgroundJobs/          # Proceso de cierre y su configuración
         ├── Configuration/           # Registro de servicios web
+        ├── Hubs/                    # Canal SignalR de la sala en vivo
         ├── Controllers/
         ├── Middleware/              # Manejo global de excepciones
         └── Security/                # Usuario actual desde el token

@@ -1,4 +1,5 @@
 using SubastaYa.Api.Configuration;
+using SubastaYa.Api.Hubs;
 using SubastaYa.Api.Middleware;
 using SubastaYa.Application;
 using SubastaYa.Infrastructure;
@@ -25,9 +26,11 @@ app.UseSwaggerUI(options =>
     options.RoutePrefix = "swagger";
 });
 
+app.UseCors(WebServiceRegistration.CorsPolicyName);
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHub<AuctionHub>(AuctionHub.Path);
 
 app.Run();
