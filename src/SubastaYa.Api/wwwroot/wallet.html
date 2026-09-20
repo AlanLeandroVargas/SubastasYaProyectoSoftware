@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SubastaYa - Mi billetera</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+    <link href="/css/styles.css" rel="stylesheet" />
+</head>
+<body>
+    <div data-navigation></div>
+
+    <main class="container py-4">
+        <header class="mb-4">
+            <h1 class="h3 mb-1">Mi billetera</h1>
+            <p class="sy-muted mb-0">Toda puja queda respaldada por saldo real congelado en garantía.</p>
+        </header>
+
+        <section class="row g-3 mb-4" aria-label="Métricas de saldo">
+            <div class="col-12 col-md-4">
+                <div class="sy-metric">
+                    <div class="sy-metric-label">Saldo total</div>
+                    <div class="sy-metric-value" id="totalBalance">--</div>
+                    <small class="sy-muted">Fondos depositados en la cuenta.</small>
+                </div>
+            </div>
+            <div class="col-12 col-md-4">
+                <div class="sy-metric">
+                    <div class="sy-metric-label">Retenido en garantía</div>
+                    <div class="sy-metric-value text-warning" id="heldBalance">--</div>
+                    <small class="sy-muted">Bloqueado en las subastas que liderás.</small>
+                </div>
+            </div>
+            <div class="col-12 col-md-4">
+                <div class="sy-metric">
+                    <div class="sy-metric-label">Disponible</div>
+                    <div class="sy-metric-value text-success" id="availableBalance">--</div>
+                    <small class="sy-muted">Único dinero utilizable para nuevas pujas.</small>
+                </div>
+            </div>
+        </section>
+
+        <div class="row g-4">
+            <div class="col-12 col-lg-4">
+                <section class="sy-panel p-3 p-md-4">
+                    <h2 class="h6 mb-3"><i class="bi bi-plus-circle me-2"></i>Cargar saldo</h2>
+
+                    <form id="depositForm" novalidate>
+                        <label class="form-label small sy-muted" for="depositAmount">Monto a acreditar</label>
+                        <div class="input-group mb-2">
+                            <span class="input-group-text">$</span>
+                            <input type="number" class="form-control" id="depositAmount"
+                                   min="1" step="1000" required placeholder="50000" />
+                        </div>
+
+                        <div class="d-flex flex-wrap gap-2 mb-3">
+                            <button type="button" class="btn btn-outline-secondary btn-sm" data-amount="10000">+ $10.000</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" data-amount="50000">+ $50.000</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" data-amount="100000">+ $100.000</button>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary w-100" id="depositButton">
+                            <i class="bi bi-cash-stack me-1"></i>Acreditar
+                        </button>
+                    </form>
+                </section>
+            </div>
+
+            <div class="col-12 col-lg-8">
+                <section class="sy-panel p-3 p-md-4">
+                    <h2 class="h6 mb-3"><i class="bi bi-journal-text me-2"></i>Historial de movimientos</h2>
+                    <div id="ledgerHistory" aria-live="polite"></div>
+                </section>
+            </div>
+        </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script type="module" src="/js/wallet.js"></script>
+</body>
+</html>

@@ -121,8 +121,10 @@ function refreshBidConsole() {
 
     const blockingReason = getBlockingReason();
 
+    // Sólo se fija el mínimo. El incremento no se usa como "step" del campo porque el dominio
+    // no exige que la oferta sea múltiplo de él: basta con alcanzar el mínimo, y una oferta
+    // intermedia como 52.000 sobre un mínimo de 50.000 es perfectamente válida.
     amountField.min = auction.minimumNextBid;
-    amountField.step = auction.minimumIncrement;
 
     // Sugerencia automática: la oferta líder más el incremento mínimo. No se pisa el valor
     // mientras el usuario está escribiendo en el campo.

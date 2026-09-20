@@ -16,6 +16,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IAuditService, AuditService>();
         services.AddScoped<IAuctionPublishingService, AuctionPublishingService>();
         services.AddScoped<IAuctionClosingService, AuctionClosingService>();
+        services.AddScoped<IUserActivityService, UserActivityService>();
 
         return services;
     }

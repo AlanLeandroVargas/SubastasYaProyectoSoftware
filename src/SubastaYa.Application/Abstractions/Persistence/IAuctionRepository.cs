@@ -35,4 +35,14 @@ public interface IAuctionRepository
         DateTime utcNow,
         int limit,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Subastas publicadas por un vendedor.</summary>
+    Task<IReadOnlyList<Auction>> GetPublishedByAsync(
+        int sellerId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Subastas en las que participó un postor, incluyendo sólo sus propias ofertas.</summary>
+    Task<IReadOnlyList<Auction>> GetParticipatedByAsync(
+        int bidderId,
+        CancellationToken cancellationToken = default);
 }

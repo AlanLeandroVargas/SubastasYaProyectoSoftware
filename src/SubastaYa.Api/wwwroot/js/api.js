@@ -103,10 +103,17 @@ export const api = {
     listCategories: () => request("GET", "/categories"),
     listAuctions: (filters) => request("GET", `/auctions?${buildQuery(filters)}`),
     getAuction: (id) => request("GET", `/auctions/${id}`),
+    createAuction: (auction) => request("POST", "/auctions", auction),
 
     // --- Pujas ---
     placeBid: (id, amount) => request("POST", `/auctions/${id}/bids`, { amount }),
 
     // --- Billetera ---
-    getBalance: () => request("GET", "/wallets/me")
+    getBalance: () => request("GET", "/wallets/me"),
+    deposit: (amount) => request("POST", "/wallets/me/deposits", { amount }),
+    listLedgerEntries: (count = 50) => request("GET", `/wallets/me/transactions?count=${count}`),
+
+    // --- Panel del usuario ---
+    listMyParticipations: () => request("GET", "/users/me/bids"),
+    listMyPublications: () => request("GET", "/users/me/auctions")
 };
