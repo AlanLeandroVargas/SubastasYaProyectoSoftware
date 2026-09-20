@@ -18,4 +18,7 @@ internal sealed class CategoryRepository : ICategoryRepository
             .AsNoTracking()
             .OrderBy(category => category.Name)
             .ToListAsync(cancellationToken);
+
+    public async Task<bool> ExistsAsync(int id, CancellationToken cancellationToken = default) =>
+        await _context.Categories.AnyAsync(category => category.Id == id, cancellationToken);
 }

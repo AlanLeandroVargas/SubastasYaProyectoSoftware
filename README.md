@@ -108,7 +108,7 @@ como el registro de pujas.
 dotnet test
 ```
 
-41 pruebas unitarias cubren las invariantes del negocio sin tocar infraestructura: incremento
+43 pruebas unitarias cubren las invariantes del negocio sin tocar infraestructura: incremento
 mínimo, ventana anti-sniping (45 s extiende, 60 s extiende, 61 s no), puja del vendedor en su
 propia subasta, puja del postor que ya lidera, subasta programada o vencida, transiciones a
 `Completed` / `Unsold`, las reglas de la billetera (retención, liberación, liquidación y
@@ -117,7 +117,8 @@ reconstruyen exactamente el saldo de la billetera.
 
 Se comprueba además que `EnsureBidIsAdmissible` **no mutile el agregado**: el caso de uso valida
 antes de tocar las billeteras, así que esa comprobación tiene que poder fallar sin dejar la
-subasta a medio modificar.
+subasta a medio modificar, y que la liquidación final mueva exactamente el mismo importe fuera
+del comprador y dentro del vendedor.
 
 ---
 
@@ -133,6 +134,7 @@ URLs. Base: `/api/v1`.
 | `GET` | `/sessions/current` | ✔ | Perfil del usuario autenticado |
 | `GET` | `/categories` | — | Listado de categorías |
 | `GET` | `/auctions` | — | Catálogo con filtros, orden y paginación |
+| `POST` | `/auctions` | ✔ | Publicar una subasta |
 | `GET` | `/auctions/{id}` | — | Detalle de la subasta con su historial de ofertas |
 | `GET` | `/auctions/{id}/bids` | — | Historial de ofertas, con los postores seudonimizados |
 | `POST` | `/auctions/{id}/bids` | ✔ | Registrar una oferta |
@@ -231,9 +233,8 @@ cualquier diferencia delata un error.
 | `Deposit` | Acreditación manual de fondos simulados |
 | `Hold` | El usuario pasa a liderar una subasta y su garantía queda congelada |
 | `Release` | El usuario es superado y su garantía vuelve al disponible |
-
-Los tipos `Payment` y `Payout` (débito del comprador y acreditación al vendedor) llegan con la
-adjudicación, que todavía no existe.
+| `Payment` | Débito final al comprador cuando se le adjudica la subasta |
+| `Payout` | Acreditación final al vendedor por la venta |
 
 ### Decisiones
 
@@ -363,6 +364,88 @@ curl -s "http://localhost:5080/api/v1/audit-logs?count=10" -H "Authorization: Be
 
 ---
 
+## Publicación y cierre automático
+
+### Publicar
+
+`POST /auctions` crea una subasta a nombre del usuario autenticado. Si la fecha de inicio ya pasó
+nace **activa**; si es futura queda **programada** y la activa el proceso en segundo plano cuando
+llega el momento.
+
+El servicio sólo orquesta: la coherencia económica y temporal la valida la propia entidad, de modo
+que no haya una segunda definición de las reglas conviviendo con la del dominio. La única
+comprobación que queda en el servicio es la existencia de la categoría, porque una subasta no puede
+conocer el catálogo entero y dejar que falle la clave foránea daría un `500` en lugar de un `400`.
+
+Las fechas se normalizan a UTC antes de llegar al dominio: un `DateTime` sin zona se interpretaría
+como hora local y correría la subasta varias horas.
+
+### El proceso en segundo plano
+
+Cada pasada hace dos cosas: activa las subastas programadas que ya comenzaron y resuelve las
+vencidas, adjudicándolas o declarándolas desiertas.
+
+| Situación | Resultado |
+|---|---|
+| Programada cuyo inicio llegó | pasa a `Active` |
+| Vencida con ofertas | `Completed` + liquidación final |
+| Vencida sin ofertas | `Unsold`, sin mover dinero |
+| Vencida pero extendida por anti-sniping | se deja correr, se reintenta después |
+
+**La liquidación** saca la garantía de la billetera del ganador y la acredita al vendedor, dejando
+los dos asientos (`Payment` y `Payout`) y el registro de auditoría en la misma transacción. El
+comprador usa `SettleWithHold` y no un débito común: el dinero ya estaba congelado desde que pasó a
+liderar, así que liberarlo y descontarlo tiene que ser una sola operación.
+
+### Decisiones
+
+* **Una transacción por subasta.** Un conflicto puntual no bloquea el lote: la subasta afectada se
+  reintenta en la pasada siguiente y el resto avanza igual.
+* **Se relee la subasta dentro de la transacción.** Las candidatas se eligen con una lectura previa
+  sin seguimiento, y entre esa lectura y la transacción el estado pudo cambiar. Si al releerla ya
+  no está vencida —porque una puja de último segundo la extendió— se la deja correr.
+* **Un conflicto de concurrencia no es un error.** Se registra como advertencia y se reintenta; el
+  resumen de la pasada lo cuenta aparte de los fallos.
+* **La lógica vive en la capa de aplicación, no en el `BackgroundService`.** Éste sólo resuelve las
+  preocupaciones del alojamiento: intervalo, alcance de las dependencias y que un error puntual no
+  mate al proceso. El disparador podría ser igual de bien una tarea programada externa.
+* **`userId` nulo en la auditoría del cierre.** No lo hizo una persona: lo hizo el sistema, y el
+  registro lo dice explícitamente.
+* **Sólo se informa cuando hubo trabajo.** Con intervalo de 10 segundos, registrar cada pasada
+  vacía ahogaría el log.
+
+```json
+"AuctionWorker": { "IntervalSeconds": 10 }
+```
+
+### Verificado de punta a punta
+
+Publicar → pujar → cerrar → liquidar, sobre subastas creadas al momento:
+
+```
+A  cierra en 100 s, puja con 70 s restantes  → sin extensión → Completed y liquidada
+B  cierra en  70 s, puja con 40 s restantes  → extendida 2 min → el proceso la deja correr
+
+vendedor     30.000,00 →  50.000,00   (+20.000,00)
+comprador1  150.000,00 → 130.000,00   (−20.000,00)
+```
+
+Y sobre los datos semilla, en la primera pasada tras el arranque:
+
+```
+subasta #4 (vencida con puja)   → COMPLETED, liquidada
+subasta #5 (vencida sin pujas)  → UNSOLD
+comprador2: $230.000 / $30.000 retenidos  →  $200.000 totales y disponibles
+```
+
+Ese último renglón es el que la consigna exige y el que la semilla venía prometiendo: la garantía
+congelada era exactamente lo que faltaba adjudicar.
+
+En todo momento el dinero se conserva: la suma de los saldos del sistema es igual a la suma de lo
+depositado. Una liquidación mueve dinero entre billeteras, nunca lo crea ni lo destruye.
+
+---
+
 ## Persistencia
 
 Entity Framework Core con enfoque **Code-First**: el esquema relacional se deriva de las
@@ -423,12 +506,14 @@ minutos") y una semilla estática quedaría obsoleta apenas se genera.
 |---|---|---:|---:|---:|
 | `vendedor@test.com` | Publica las 5 subastas | $0 | $0 | $0 |
 | `comprador1@test.com` | Postor líder de la subasta activa | $150.000 | $45.000 | $105.000 |
-| `comprador2@test.com` | Ganador pendiente de liquidación | $230.000 | $30.000 | $200.000 |
+| `comprador2@test.com` | Ganador de la subasta vencida | $230.000 | $30.000 | $200.000 |
 | `sinfondos@test.com` | Servirá para probar el rechazo por saldo | $500 | $0 | $500 |
 
-> Los $30.000 retenidos de `comprador2` respaldan la subasta vencida que todavía **nadie
-> adjudicó**. Cuando exista el proceso en segundo plano, esa garantía pasará al vendedor y la
-> cuenta quedará en $200.000 totales y disponibles.
+> Los saldos de la tabla son los del **instante de la siembra**. Los $30.000 retenidos de
+> `comprador2` respaldan la subasta vencida que todavía nadie adjudicó, y el proceso en segundo
+> plano los liquida en su primera pasada: unos segundos después del arranque, `comprador2` queda
+> en **$200.000 totales y disponibles** y el vendedor en **$30.000**, que es el estado que
+> describe la consigna.
 
 Todas las cuentas comparten la contraseña `Password123!`, ya hasheada con PBKDF2 por el
 sembrador.
@@ -444,11 +529,12 @@ contenido desde el primer arranque y reconstruye exactamente los saldos de la ta
 | 1 | Notebook gamer — cierra en 25 min, 2 pujas previas, líder $45.000 | `Active` |
 | 2 | Figura coleccionable — cierra en 90 s | `Active` |
 | 3 | Campera vintage — inicio a +24 h | `Scheduled` |
-| 4 | Moto 150cc — cierre vencido con puja ganadora | `Active`, pendiente de adjudicación |
-| 5 | Álbum de figuritas — cierre vencido sin pujas | `Active`, pendiente de cierre |
+| 4 | Moto 150cc — cierre vencido con puja ganadora | nace `Active`, el proceso la deja `Completed` |
+| 5 | Álbum de figuritas — cierre vencido sin pujas | nace `Active`, el proceso la deja `Unsold` |
 
-Los casos 4 y 5 quedan **vencidos pero abiertos**: es el estado que deberá resolver el proceso en
-segundo plano cuando se implemente.
+Los casos 4 y 5 nacen **vencidos pero abiertos** a propósito: son la prueba de que el proceso en
+segundo plano resuelve lo que encuentra pendiente al arrancar, incluidas las subastas que
+vencieron mientras la aplicación no estaba corriendo.
 
 ---
 
@@ -510,7 +596,8 @@ El desarrollo avanza por funcionalidad, una por *pull request*.
 - [x] Autenticación con JWT
 - [x] Billetera virtual y libro mayor
 - [x] Registro de pujas con garantías atómicas y bloqueo optimista
-- [ ] Proceso en segundo plano de adjudicación
+- [x] Publicación de subastas
+- [x] Proceso en segundo plano de adjudicación
 - [ ] Sincronización en tiempo real (reemplaza al notificador provisional)
 - [ ] Frontend
 - [ ] Prueba de concurrencia
@@ -549,6 +636,7 @@ SubastasYaProyectoSoftware/
     │   ├── Security/                # PBKDF2 y emisión de JWT
     │   └── Time/                    # Reloj del sistema
     └── SubastaYa.Api/
+        ├── BackgroundJobs/          # Proceso de cierre y su configuración
         ├── Configuration/           # Registro de servicios web
         ├── Controllers/
         ├── Middleware/              # Manejo global de excepciones

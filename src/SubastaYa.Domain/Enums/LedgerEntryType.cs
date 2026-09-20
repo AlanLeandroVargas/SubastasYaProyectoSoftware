@@ -14,5 +14,11 @@ public enum LedgerEntryType
     Hold = 2,
 
     /// <summary>Fondos congelados que vuelven a estar disponibles tras ser superado.</summary>
-    Release = 3
+    Release = 3,
+
+    /// <summary>Débito definitivo al comprador cuando se le adjudica la subasta.</summary>
+    Payment = 4,
+
+    /// <summary>Acreditación definitiva al vendedor por la venta adjudicada.</summary>
+    Payout = 5
 }

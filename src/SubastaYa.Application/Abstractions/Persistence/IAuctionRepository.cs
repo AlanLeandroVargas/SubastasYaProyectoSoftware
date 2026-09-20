@@ -9,6 +9,8 @@ namespace SubastaYa.Application.Abstractions.Persistence;
 /// </summary>
 public interface IAuctionRepository
 {
+    void Add(Auction auction);
+
     /// <summary>Búsqueda paginada del catálogo con filtros de estado, categoría, precio y orden.</summary>
     Task<PagedResult<Auction>> SearchAsync(AuctionFilter filter, CancellationToken cancellationToken = default);
 
@@ -21,4 +23,16 @@ public interface IAuctionRepository
     /// materializar el historial entero en cada oferta sería un costo inútil.
     /// </summary>
     Task<Auction?> GetForUpdateAsync(int id, CancellationToken cancellationToken = default);
+
+    /// <summary>Subastas activas cuya fecha de cierre ya pasó y siguen pendientes de resolución.</summary>
+    Task<IReadOnlyList<Auction>> GetExpiredAsync(
+        DateTime utcNow,
+        int limit,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Subastas programadas cuya fecha de inicio ya llegó.</summary>
+    Task<IReadOnlyList<Auction>> GetScheduledToActivateAsync(
+        DateTime utcNow,
+        int limit,
+        CancellationToken cancellationToken = default);
 }

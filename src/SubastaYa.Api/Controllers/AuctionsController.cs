@@ -8,8 +8,8 @@ using SubastaYa.Application.Dtos;
 namespace SubastaYa.Api.Controllers;
 
 /// <summary>
-/// Recurso principal de la API. Expone el catálogo, el detalle de la sala en vivo y el
-/// subrecurso anidado de ofertas.
+/// Recurso principal de la API. Expone el catálogo, el detalle de la sala en vivo, la
+/// publicación de subastas y el subrecurso anidado de ofertas.
 ///
 /// Las lecturas siguen siendo públicas: si hay sesión la respuesta se personaliza, y si no la hay
 /// se devuelve la misma información sin marcas personales.
@@ -22,15 +22,18 @@ public sealed class AuctionsController : ControllerBase
     private const int DefaultHistorySize = 25;
 
     private readonly ICatalogService _catalog;
+    private readonly IAuctionPublishingService _publishing;
     private readonly IBiddingService _bidding;
     private readonly ICurrentUser _currentUser;
 
     public AuctionsController(
         ICatalogService catalog,
+        IAuctionPublishingService publishing,
         IBiddingService bidding,
         ICurrentUser currentUser)
     {
         _catalog = catalog;
+        _publishing = publishing;
         _bidding = bidding;
         _currentUser = currentUser;
     }
@@ -49,6 +52,27 @@ public sealed class AuctionsController : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<AuctionDetailDto>> GetById(int id, CancellationToken cancellationToken) =>
         Ok(await _catalog.GetDetailAsync(id, _currentUser.Id, cancellationToken));
+
+    /// <summary>
+    /// Publica una subasta nueva a nombre del usuario autenticado.
+    /// Si la fecha de inicio ya pasó, nace ACTIVA; si es futura, queda PROGRAMADA y la activa el
+    /// proceso en segundo plano cuando llega el momento.
+    /// </summary>
+    /// <response code="201">La subasta quedó publicada.</response>
+    /// <response code="400">Datos incoherentes: precios, fechas, textos o categoría inexistente.</response>
+    [HttpPost]
+    [Authorize]
+    [ProducesResponseType(typeof(AuctionDetailDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<AuctionDetailDto>> Create(
+        [FromBody] CreateAuctionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var published = await _publishing.PublishAsync(request, _currentUser.RequireId(), cancellationToken);
+
+        return CreatedAtAction(nameof(GetById), new { id = published.Id }, published);
+    }
 
     /// <summary>Historial de ofertas de la subasta, con los postores seudonimizados.</summary>
     [HttpGet("{id:int}/bids")]

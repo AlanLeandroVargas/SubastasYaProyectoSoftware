@@ -16,3 +16,14 @@ public sealed record BidPlacedEvent(
     DateTime EndsAtUtc,
     bool WasExtended,
     int? OutbidBidderId);
+
+/// <summary>
+/// Actualización que se difunde cuando el proceso en segundo plano cierra una subasta.
+/// Los tres últimos campos son nulos cuando la subasta quedó desierta.
+/// </summary>
+public sealed record AuctionClosedEvent(
+    int AuctionId,
+    string Status,
+    decimal? FinalAmount,
+    int? WinnerId,
+    string? WinnerPseudonym);
