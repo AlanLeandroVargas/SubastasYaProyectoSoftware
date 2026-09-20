@@ -8,7 +8,7 @@ Trabajo práctico de la cátedra **Proyecto de Software** — Ingeniería en Inf
 | | |
 |---|---|
 | **Backend** | C# / .NET 9 · ASP.NET Core Web API |
-| **Base de datos** | SQL Server (Entity Framework Core, Code-First) |
+| **Base de datos** | SQL Server · Entity Framework Core 9 (Code-First) |
 | **Frontend** | HTML5 + CSS + JavaScript (ES Modules) + Bootstrap 5 |
 | **Documentación** | OpenAPI / Swagger UI autogenerada |
 
@@ -146,16 +146,86 @@ se muestra tal cual en pantalla:
 `GlobalExceptionMiddleware` es el único lugar donde se traduce una excepción de dominio a un
 código HTTP, de modo que un error de negocio nunca se degrada en un 500 genérico.
 
-### Persistencia provisional
+---
 
-El catálogo se sirve hoy desde un **conjunto de datos en memoria**
-(`Persistence/InMemory/InMemoryCatalogStore`) que cubre los cinco casos de prueba de la consigna
-y los cuatro estados posibles. Es deliberado: permite cerrar el contrato de la API y validar los
-filtros, el orden y el paginado antes de incorporar Entity Framework Core.
+## Persistencia
 
-Cuando llegue la persistencia real sólo cambia el registro de dos puertos en
-`InfrastructureServiceRegistration`; ni el dominio, ni los casos de uso, ni los controladores se
-enteran del cambio.
+Entity Framework Core con enfoque **Code-First**: el esquema relacional se deriva de las
+entidades del dominio y se materializa mediante migraciones.
+
+El cambio desde la implementación en memoria de la funcionalidad anterior tocó **sólo la capa de
+infraestructura**: dos líneas de `InfrastructureServiceRegistration`. Ni el dominio, ni los casos
+de uso, ni los controladores se enteraron, que es exactamente lo que buscaba la inversión de
+dependencias.
+
+### Esquema
+
+| Tabla | Contenido |
+|---|---|
+| `Users` | Participantes. `Email` y `Pseudonym` únicos. |
+| `Wallets` | Saldos. Relación 1:1 con `Users`, con índice único sobre `UserId`. |
+| `Categories` | Clasificación del catálogo, con `Name` único. |
+| `Auctions` | Subastas. `Status` se guarda como texto legible. |
+| `Bids` | Historial de ofertas, con índice `(AuctionId, Amount)`. |
+
+**Integridad garantizada por el motor**, no sólo por el código:
+
+| Restricción | Tabla | Regla |
+|---|---|---|
+| `CK_Wallets_CoherentBalances` | Wallets | `TotalBalance >= 0 AND HeldBalance >= 0 AND TotalBalance >= HeldBalance` |
+| `CK_Auctions_PositiveAmounts` | Auctions | `StartingPrice > 0 AND MinimumIncrement > 0` |
+| `CK_Auctions_Schedule` | Auctions | `EndsAt > StartsAt` |
+| `CK_Auctions_BidCount` | Auctions | `BidCount >= 0` |
+| `CK_Bids_PositiveAmount` | Bids | `Amount > 0` |
+
+`Auctions.Version` y `Wallets.Version` se mapean como **`rowversion`**: es el soporte del bloqueo
+optimista que usará el registro de pujas.
+
+`AvailableBalance` **no se persiste**: es un dato derivado (`TotalBalance - HeldBalance`) que
+calcula el dominio. Almacenarlo introduciría un tercer valor que podría quedar desincronizado.
+
+### Fechas en UTC
+
+Un convertidor global fuerza `DateTimeKind.Utc` al leer, porque `datetime2` no almacena zona
+horaria. Sin eso el JSON viajaría sin `Z` y el navegador interpretaría los cierres como hora
+local, desfasando todos los contadores regresivos.
+
+---
+
+## Datos semilla
+
+Se cargan al arrancar si la base está vacía, y **no** con `HasData` de una migración: los casos de
+prueba se definen en relación al instante actual ("cierra en 25 minutos", "venció hace 2
+minutos") y una semilla estática quedaría obsoleta apenas se genera.
+
+### Usuarios y billeteras
+
+| Email | Rol en la demo | Total | Retenido | Disponible |
+|---|---|---:|---:|---:|
+| `vendedor@test.com` | Publica las 5 subastas | $0 | $0 | $0 |
+| `comprador1@test.com` | Postor líder de la subasta activa | $150.000 | $45.000 | $105.000 |
+| `comprador2@test.com` | Ganador pendiente de liquidación | $230.000 | $30.000 | $200.000 |
+| `sinfondos@test.com` | Servirá para probar el rechazo por saldo | $500 | $0 | $500 |
+
+> Los $30.000 retenidos de `comprador2` respaldan la subasta vencida que todavía **nadie
+> adjudicó**. Cuando exista el proceso en segundo plano, esa garantía pasará al vendedor y la
+> cuenta quedará en $200.000 totales y disponibles.
+
+Las contraseñas quedan sin hash a propósito: la autenticación llega en su propia funcionalidad y
+hasta entonces el catálogo es completamente público.
+
+### Subastas (casos de prueba de la consigna)
+
+| # | Caso | Estado |
+|---|---|---|
+| 1 | Notebook gamer — cierra en 25 min, 2 pujas previas, líder $45.000 | `Active` |
+| 2 | Figura coleccionable — cierra en 90 s | `Active` |
+| 3 | Campera vintage — inicio a +24 h | `Scheduled` |
+| 4 | Moto 150cc — cierre vencido con puja ganadora | `Active`, pendiente de adjudicación |
+| 5 | Álbum de figuritas — cierre vencido sin pujas | `Active`, pendiente de cierre |
+
+Los casos 4 y 5 quedan **vencidos pero abiertos**: es el estado que deberá resolver el proceso en
+segundo plano cuando se implemente.
 
 ---
 
@@ -164,6 +234,17 @@ enteran del cambio.
 ### Requisitos
 
 * [.NET SDK 9.0](https://dotnet.microsoft.com/download) o superior
+* SQL Server en cualquiera de sus variantes: **LocalDB** (viene con Visual Studio y con SQL
+  Server Express), SQL Server Developer/Express, o un contenedor Docker.
+
+La cadena de conexión está en `src/SubastaYa.Api/appsettings.json` y por defecto apunta a LocalDB,
+que no requiere ninguna instalación adicional en Windows:
+
+```json
+"ConnectionStrings": {
+  "SubastaYa": "Server=(localdb)\MSSQLLocalDB;Database=SubastaYaDb;Trusted_Connection=True;TrustServerCertificate=True"
+}
+```
 
 ### Compilar y ejecutar
 
@@ -171,6 +252,20 @@ enteran del cambio.
 dotnet restore
 dotnet build
 dotnet run --project src/SubastaYa.Api
+```
+
+**Las migraciones se aplican solas al arrancar.** Para ejecutarlas a mano:
+
+```bash
+dotnet tool restore
+dotnet ef database update --project src/SubastaYa.Infrastructure --startup-project src/SubastaYa.Api
+```
+
+Para reiniciar el escenario de prueba alcanza con borrar la base; el próximo arranque la recrea y
+la vuelve a sembrar:
+
+```bash
+dotnet ef database drop --force --project src/SubastaYa.Infrastructure --startup-project src/SubastaYa.Api
 ```
 
 | Recurso | URL |
@@ -187,8 +282,8 @@ El desarrollo avanza por funcionalidad, una por *pull request*.
 
 - [x] Estructura de la solución en capas y health check
 - [x] Modelo de dominio y reglas de subasta
-- [x] Catálogo de subastas (API de lectura, con persistencia en memoria)
-- [ ] Persistencia con EF Core, migraciones y datos semilla
+- [x] Catálogo de subastas (API de lectura)
+- [x] Persistencia con EF Core, migraciones y datos semilla
 - [ ] Autenticación con JWT
 - [ ] Billetera virtual y libro mayor
 - [ ] Registro de pujas con garantías atómicas y bloqueo optimista
@@ -205,6 +300,7 @@ El desarrollo avanza por funcionalidad, una por *pull request*.
 SubastasYaProyectoSoftware/
 ├── SubastaYa.sln
 ├── Directory.Build.props            # TargetFramework y opciones comunes
+├── .config/dotnet-tools.json        # dotnet-ef fijado por versión
 ├── tests/
 │   └── SubastaYa.Domain.Tests/      # Pruebas unitarias del dominio (xUnit)
 └── src/
@@ -221,7 +317,11 @@ SubastasYaProyectoSoftware/
     │   ├── Common/                  # PagedResult
     │   └── Services/                # Casos de uso
     ├── SubastaYa.Infrastructure/
-    │   ├── Persistence/InMemory/    # Persistencia provisional
+    │   ├── Persistence/
+    │   │   ├── Configurations/      # Fluent API por entidad
+    │   │   ├── Migrations/          # Code-First
+    │   │   ├── Repositories/
+    │   │   └── Seeding/
     │   └── Time/                    # Reloj del sistema
     └── SubastaYa.Api/
         ├── Controllers/

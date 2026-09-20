@@ -5,6 +5,12 @@
     <ProjectReference Include="..\SubastaYa.Infrastructure\SubastaYa.Infrastructure.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Requerido por las herramientas de EF Core: el proyecto de arranque es el que resuelve
+         la configuración y la cadena de conexión al generar o aplicar migraciones. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.0">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
     <PackageReference Include="Swashbuckle.AspNetCore" Version="7.2.0" />
   </ItemGroup>
 </Project>
