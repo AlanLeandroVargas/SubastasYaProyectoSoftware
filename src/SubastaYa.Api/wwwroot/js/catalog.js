@@ -54,7 +54,8 @@ function readFilters() {
 
 function renderCard(auction) {
     const status = auction.status;
-    const isCountingDown = status === "ACTIVE" || status === "SCHEDULED";
+    const isRunning = status === "ACTIVE";
+    const isCountingDown = isRunning || status === "SCHEDULED";
     const referenceDate = status === "SCHEDULED" ? auction.startsAtUtc : auction.endsAtUtc;
 
     // Una subasta cerrada no tiene cuenta regresiva: muestra su desenlace en lugar de un
@@ -87,10 +88,14 @@ function renderCard(auction) {
                         <div class="sy-amount">${formatCurrency(auction.currentAmount)}</div>
                     </div>
 
-                    <div class="d-flex justify-content-between align-items-center sy-muted small mt-auto">
+                    <div class="d-flex justify-content-between align-items-center sy-muted small">
                         <span><i class="bi bi-hammer me-1"></i>${auction.bidCount} oferta(s)</span>
                         <span><i class="bi bi-clock me-1"></i>${timeInfo}</span>
                     </div>
+
+                    <a class="btn btn-primary btn-sm mt-auto" href="/auction.html?id=${auction.id}">
+                        ${isRunning ? "Entrar a la sala" : "Ver detalle"}
+                    </a>
                 </div>
             </article>
         </div>`;

@@ -101,5 +101,12 @@ export const api = {
 
     // --- Catálogo ---
     listCategories: () => request("GET", "/categories"),
-    listAuctions: (filters) => request("GET", `/auctions?${buildQuery(filters)}`)
+    listAuctions: (filters) => request("GET", `/auctions?${buildQuery(filters)}`),
+    getAuction: (id) => request("GET", `/auctions/${id}`),
+
+    // --- Pujas ---
+    placeBid: (id, amount) => request("POST", `/auctions/${id}/bids`, { amount }),
+
+    // --- Billetera ---
+    getBalance: () => request("GET", "/wallets/me")
 };

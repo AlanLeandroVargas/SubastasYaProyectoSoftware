@@ -51,3 +51,18 @@ export function isAuthenticated() {
 export function signOut() {
     localStorage.removeItem(SESSION_KEY);
 }
+
+/**
+ * Redirige al inicio de sesión conservando el origen, para devolver al usuario a la misma
+ * pantalla una vez que ingresa en lugar de dejarlo en el catálogo.
+ */
+export function requireSession() {
+    if (isAuthenticated()) {
+        return true;
+    }
+
+    const target = encodeURIComponent(window.location.pathname + window.location.search);
+    window.location.href = `/login.html?returnTo=${target}`;
+
+    return false;
+}

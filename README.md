@@ -520,7 +520,7 @@ framework no cubre: la identidad visual, los distintivos de estado y el contador
 | `session.js` | Guarda y recupera la sesión; una sesión vencida se descarta antes de usarla |
 | `api.js` | Único punto que conoce `fetch`, la ruta base y los códigos de estado |
 | `ui.js` | Formato, avisos flotantes, estados de carga, contador y barra de navegación |
-| `catalog.js` · `login.js` | Una vista por pantalla, sin lógica compartida duplicada |
+| `catalog.js` · `login.js` · `auction-room.js` | Una vista por pantalla, sin lógica compartida duplicada |
 
 Las vistas nunca tocan `fetch` ni interpretan un código HTTP: reciben un `ApiError` ya traducido.
 Es la misma separación que en el backend, sólo que del otro lado del cable.
@@ -558,6 +558,69 @@ ancho de 375 px                → filtros apilados, menú plegado, sin desborde
 
 Sin errores en la consola, y sin una sola petición fallida salvo el 401 del intento deliberado
 con contraseña incorrecta.
+
+### La sala en vivo
+
+Es la pantalla donde se cruza todo lo construido antes: el estado de la subasta, el saldo, la
+regla anti-sniping, el proceso de cierre y el canal de tiempo real.
+
+**Indicador de situación.** Lo primero que se ve al entrar es en qué posición está uno: liderando
+(verde), superado (rojo) o sin haber participado. Haber ofertado y no liderar significa exactamente
+una cosa, y el indicador lo dice: *"te superaron, tu garantía fue liberada"*.
+
+**La consola se bloquea antes de dejar fallar.** Si la operación es imposible, el formulario no se
+muestra y se explica por qué: sin sesión, siendo el vendedor, con la subasta programada o cerrada,
+o cuando uno ya es el postor líder. Es más barato y más claro que dejar que el backend responda un
+error por algo que la pantalla ya sabía.
+
+| Situación | Mensaje |
+|---|---|
+| Sin sesión | Iniciá sesión para poder ofertar |
+| Es el vendedor | Un vendedor no puede ofertar en su propia subasta |
+| Subasta programada | Las ofertas se habilitan el *(fecha de inicio)* |
+| Subasta cerrada | La subasta ya está cerrada |
+| Ya lidera | Ya sos el postor líder: esperá a que alguien te supere |
+
+**El monto se sugiere solo**, en el mínimo admitido, y el campo no se pisa mientras el usuario
+escribe. El texto de ayuda explica de dónde sale ese número: líder más incremento mínimo.
+
+### Sincronización
+
+La sala se conecta al hub y se une al grupo de **esa** subasta. Al recibir un evento **recarga el
+estado desde la API** en lugar de confiar sólo en el payload: así el historial, el saldo y los
+indicadores quedan siempre consistentes con la base de datos, y el evento funciona como una señal
+de "algo cambió" y no como fuente de verdad.
+
+Por encima hay un **sondeo de respaldo cada 5 segundos**, que sólo consulta con la pestaña visible.
+Si el WebSocket no está disponible, la sala se degrada a sondeo en lugar de quedarse congelada; el
+indicador junto al historial dice en cuál de los dos modos está.
+
+Al reconectar hay que **volver a unirse al grupo**: la pertenencia vive en la conexión, y además
+pudo haber pasado cualquier cosa mientras el canal estuvo caído, así que también se recarga.
+
+### Verificado en el navegador
+
+Con la sala abierta y las ofertas enviadas **desde fuera del navegador**, para que el único camino
+posible fuera el canal en tiempo real:
+
+```
+otro postor supera tu oferta   → aviso dirigido "Postor_A1 te superó con $ 55.000"
+                                  el indicador pasa de verde a rojo
+                                  retenido $ 50.000 → $ 0 y disponible $ 150.000 → $ 200.000
+                                  la consola se rehabilita con el nuevo mínimo
+puja dentro de la ventana      → el reloj salta de 00:00:45 a 00:02:41 y baja de rojo a ámbar
+el proceso cierra la subasta   → "Subasta finalizada. Ganador: Postor_A1 con $ 8.000"
+                                  el estado pasa a Finalizada y la consola se bloquea
+```
+
+Ver la garantía liberarse en vivo, sin recargar, es la prueba de que el escrow del backend y la
+sala del frontend están mirando el mismo estado.
+
+El resto de los caminos: vendedor bloqueado en su propia subasta, subasta programada con cuenta
+regresiva al inicio, subasta desierta con el reloj en "Cerrada", saldo insuficiente resuelto como
+advertencia ámbar y no como error, monto por debajo del mínimo rechazado en pantalla sin llamar al
+backend, identificador inválido con estado vacío, y a 375 px de ancho las columnas se apilan sin
+desborde horizontal.
 
 ---
 
@@ -692,10 +755,28 @@ la vuelve a sembrar:
 dotnet ef database drop --force --project src/SubastaYa.Infrastructure --startup-project src/SubastaYa.Api
 ```
 
+### Si LocalDB deja de responder
+
+LocalDB se apaga solo tras un rato de inactividad. Si al arrancar aparece un error de conexión:
+
+```bash
+sqllocaldb start MSSQLLocalDB
+```
+
+Y si después de eso el arranque falla con **«Cannot create file … SubastaYaDb.mdf because it
+already exists»** (error 5170), quedaron archivos huérfanos: la base ya no figura en el catálogo de
+LocalDB pero sus archivos siguen en disco. Como sólo contienen datos semilla, que se regeneran en
+el siguiente arranque, alcanza con borrarlos:
+
+```bash
+rm -f "$USERPROFILE/SubastaYaDb.mdf" "$USERPROFILE/SubastaYaDb_log.ldf"
+```
+
 | Recurso | URL |
 |---|---|
 | **Aplicación** | <http://localhost:5080/> |
 | Iniciar sesión | <http://localhost:5080/login.html> |
+| Sala en vivo | <http://localhost:5080/auction.html?id=1> |
 | Swagger UI | <http://localhost:5080/swagger> |
 | Health check | <http://localhost:5080/api/v1/health> |
 
@@ -719,7 +800,7 @@ El desarrollo avanza por funcionalidad, una por *pull request*.
 - [x] Proceso en segundo plano de adjudicación
 - [x] Sincronización en tiempo real con SignalR
 - [x] Frontend: catálogo e inicio de sesión
-- [ ] Frontend: sala en vivo
+- [x] Frontend: sala en vivo
 - [ ] Frontend: billetera y actividad
 - [ ] Prueba de concurrencia
 
@@ -766,5 +847,6 @@ SubastasYaProyectoSoftware/
             ├── css/styles.css       # Identidad visual sobre Bootstrap
             ├── js/                  # session, api, ui y una vista por pantalla
             ├── index.html           # Catálogo
+            ├── auction.html         # Sala de subasta en vivo
             └── login.html           # Inicio de sesión
 ```
