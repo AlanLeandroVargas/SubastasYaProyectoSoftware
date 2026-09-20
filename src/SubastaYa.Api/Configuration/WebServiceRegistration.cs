@@ -4,7 +4,9 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using SubastaYa.Api.BackgroundJobs;
+using SubastaYa.Api.Hubs;
 using SubastaYa.Api.Security;
+using SubastaYa.Application.Abstractions.RealTime;
 using SubastaYa.Application.Abstractions.Security;
 using SubastaYa.Infrastructure.Security;
 
@@ -17,6 +19,8 @@ namespace SubastaYa.Api.Configuration;
 /// </summary>
 public static class WebServiceRegistration
 {
+    public const string CorsPolicyName = "SubastaYaFrontend";
+
     public static IServiceCollection AddWebLayer(this IServiceCollection services, IConfiguration configuration)
     {
         services
@@ -26,6 +30,12 @@ public static class WebServiceRegistration
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUser, HttpCurrentUser>();
 
+        // El contexto del hub es seguro para uso concurrente, de ahí que el notificador pueda
+        // ser singleton aunque lo consuman servicios con alcance de petición.
+        services.AddSignalR();
+        services.AddSingleton<IAuctionNotifier, SignalRAuctionNotifier>();
+
+        ConfigureCors(services, configuration);
         ConfigureBackgroundJobs(services, configuration);
         ConfigureAuthentication(services, configuration);
         ConfigureDocumentation(services);
@@ -37,6 +47,23 @@ public static class WebServiceRegistration
     /// Registra el proceso que resuelve las subastas vencidas. Vive en el host de la API por
     /// comodidad de despliegue; la lógica que ejecuta pertenece a la capa de aplicación.
     /// </summary>
+    /// <summary>
+    /// Habilita el consumo desde el frontend. <c>AllowCredentials</c> es obligatorio para que
+    /// SignalR pueda negociar la conexión, y obliga a enumerar los orígenes: con credenciales
+    /// habilitadas el navegador rechaza un comodín.
+    /// </summary>
+    private static void ConfigureCors(IServiceCollection services, IConfiguration configuration)
+    {
+        var allowedOrigins = configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+                             ?? new[] { "http://localhost:5173" };
+
+        services.AddCors(options => options.AddPolicy(CorsPolicyName, policy => policy
+            .WithOrigins(allowedOrigins)
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials()));
+    }
+
     private static void ConfigureBackgroundJobs(IServiceCollection services, IConfiguration configuration)
     {
         services.Configure<AuctionWorkerOptions>(configuration.GetSection(AuctionWorkerOptions.SectionName));
