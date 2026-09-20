@@ -19,6 +19,8 @@ internal sealed class LedgerRepository : ILedgerRepository
     /// </summary>
     public void Add(LedgerEntry entry) => _context.LedgerEntries.Add(entry);
 
+    public void AddRange(IEnumerable<LedgerEntry> entries) => _context.LedgerEntries.AddRange(entries);
+
     public async Task<IReadOnlyList<LedgerEntry>> GetByWalletAsync(
         int walletId,
         int count,

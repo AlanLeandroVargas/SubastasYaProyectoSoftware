@@ -68,4 +68,12 @@ public class LedgerEntry
     public static LedgerEntry Release(int walletId, decimal amount, DateTime occurredAt, int auctionId) =>
         new(walletId, LedgerEntryType.Release, amount, occurredAt, auctionId,
             $"Garantía liberada al ser superado en la subasta #{auctionId}.");
+
+    public static LedgerEntry Payment(int walletId, decimal amount, DateTime occurredAt, int auctionId) =>
+        new(walletId, LedgerEntryType.Payment, amount, occurredAt, auctionId,
+            $"Débito final por la adjudicación de la subasta #{auctionId}.");
+
+    public static LedgerEntry Payout(int walletId, decimal amount, DateTime occurredAt, int auctionId) =>
+        new(walletId, LedgerEntryType.Payout, amount, occurredAt, auctionId,
+            $"Acreditación por la venta de la subasta #{auctionId}.");
 }

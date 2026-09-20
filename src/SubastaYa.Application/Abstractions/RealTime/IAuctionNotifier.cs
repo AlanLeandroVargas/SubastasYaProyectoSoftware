@@ -12,4 +12,6 @@ namespace SubastaYa.Application.Abstractions.RealTime;
 public interface IAuctionNotifier
 {
     Task NotifyBidPlacedAsync(BidPlacedEvent notification, CancellationToken cancellationToken = default);
+
+    Task NotifyAuctionClosedAsync(AuctionClosedEvent notification, CancellationToken cancellationToken = default);
 }

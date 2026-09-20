@@ -20,5 +20,17 @@ public enum AuditAction
     BidRejectedByValidation = 4,
 
     /// <summary>Acreditación manual de fondos simulados en una billetera.</summary>
-    ManualWalletCredit = 5
+    ManualWalletCredit = 5,
+
+    /// <summary>Un vendedor publicó una subasta nueva.</summary>
+    AuctionCreated = 6,
+
+    /// <summary>El proceso en segundo plano pasó a activa una subasta programada.</summary>
+    AuctionActivated = 7,
+
+    /// <summary>La subasta venció con ofertas y se adjudicó al postor líder.</summary>
+    AuctionCompleted = 8,
+
+    /// <summary>La subasta venció sin ofertas y quedó desierta.</summary>
+    AuctionDeclaredUnsold = 9
 }

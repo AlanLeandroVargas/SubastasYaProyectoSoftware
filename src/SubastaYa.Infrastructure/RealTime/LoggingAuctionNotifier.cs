@@ -41,4 +41,19 @@ internal sealed class LoggingAuctionNotifier : IAuctionNotifier
 
         return Task.CompletedTask;
     }
+
+    public Task NotifyAuctionClosedAsync(
+        AuctionClosedEvent notification,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Difusión pendiente de transporte. Subasta {AuctionId} cerrada como {Status}. " +
+            "Ganador: {Winner}, importe final: {FinalAmount}.",
+            notification.AuctionId,
+            notification.Status,
+            notification.WinnerPseudonym ?? "sin ganador",
+            notification.FinalAmount);
+
+        return Task.CompletedTask;
+    }
 }

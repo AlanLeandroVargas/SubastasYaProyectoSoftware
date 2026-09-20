@@ -14,6 +14,8 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IWalletService, WalletService>();
         services.AddScoped<IBiddingService, BiddingService>();
         services.AddScoped<IAuditService, AuditService>();
+        services.AddScoped<IAuctionPublishingService, AuctionPublishingService>();
+        services.AddScoped<IAuctionClosingService, AuctionClosingService>();
 
         return services;
     }

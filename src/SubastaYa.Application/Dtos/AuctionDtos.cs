@@ -45,6 +45,17 @@ public sealed record AuctionDetailDto(
 /// </summary>
 public sealed record BidDto(int Id, decimal Amount, string Bidder, DateTime PlacedAtUtc, bool IsMine);
 
+/// <summary>Datos de publicación que envía un vendedor.</summary>
+public sealed record CreateAuctionRequest(
+    string Title,
+    string Description,
+    string ImageUrl,
+    int CategoryId,
+    decimal StartingPrice,
+    decimal MinimumIncrement,
+    DateTime StartsAtUtc,
+    DateTime EndsAtUtc);
+
 /// <summary>Monto ofertado por un comprador en la sala en vivo.</summary>
 public sealed record PlaceBidRequest(decimal Amount);
 

@@ -3,6 +3,7 @@ using SubastaYa.Application.Abstractions.Persistence;
 using SubastaYa.Application.Common;
 using SubastaYa.Application.Dtos;
 using SubastaYa.Domain.Entities;
+using SubastaYa.Domain.Enums;
 
 namespace SubastaYa.Infrastructure.Persistence.Repositories;
 
@@ -21,6 +22,8 @@ internal sealed class AuctionRepository : IAuctionRepository
     {
         _context = context;
     }
+
+    public void Add(Auction auction) => _context.Auctions.Add(auction);
 
     public async Task<PagedResult<Auction>> SearchAsync(
         AuctionFilter filter,
@@ -57,6 +60,36 @@ internal sealed class AuctionRepository : IAuctionRepository
     public async Task<Auction?> GetForUpdateAsync(int id, CancellationToken cancellationToken = default) =>
         await _context.Auctions
             .FirstOrDefaultAsync(auction => auction.Id == id, cancellationToken);
+
+    /// <summary>
+    /// Candidatas a cierre. Se leen sin seguimiento porque el proceso vuelve a cargarlas una
+    /// por una dentro de su propia transacción: entre esta lectura y ese momento el estado
+    /// puede haber cambiado, y es ahí donde se decide de verdad.
+    /// </summary>
+    public async Task<IReadOnlyList<Auction>> GetExpiredAsync(
+        DateTime utcNow,
+        int limit,
+        CancellationToken cancellationToken = default) =>
+        await _context.Auctions
+            .AsNoTracking()
+            .Where(auction => auction.Status == AuctionStatus.Active && auction.EndsAt <= utcNow)
+            .OrderBy(auction => auction.EndsAt)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+
+    /// <summary>
+    /// Con seguimiento: la activación es un cambio de estado que se aplica sobre estas mismas
+    /// instancias y se confirma en una única transacción.
+    /// </summary>
+    public async Task<IReadOnlyList<Auction>> GetScheduledToActivateAsync(
+        DateTime utcNow,
+        int limit,
+        CancellationToken cancellationToken = default) =>
+        await _context.Auctions
+            .Where(auction => auction.Status == AuctionStatus.Scheduled && auction.StartsAt <= utcNow)
+            .OrderBy(auction => auction.StartsAt)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
 
     private static IQueryable<Auction> ApplyFilters(IQueryable<Auction> query, AuctionFilter filter)
     {

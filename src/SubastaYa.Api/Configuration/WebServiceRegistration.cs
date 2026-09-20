@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using SubastaYa.Api.BackgroundJobs;
 using SubastaYa.Api.Security;
 using SubastaYa.Application.Abstractions.Security;
 using SubastaYa.Infrastructure.Security;
@@ -25,10 +26,21 @@ public static class WebServiceRegistration
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUser, HttpCurrentUser>();
 
+        ConfigureBackgroundJobs(services, configuration);
         ConfigureAuthentication(services, configuration);
         ConfigureDocumentation(services);
 
         return services;
+    }
+
+    /// <summary>
+    /// Registra el proceso que resuelve las subastas vencidas. Vive en el host de la API por
+    /// comodidad de despliegue; la lógica que ejecuta pertenece a la capa de aplicación.
+    /// </summary>
+    private static void ConfigureBackgroundJobs(IServiceCollection services, IConfiguration configuration)
+    {
+        services.Configure<AuctionWorkerOptions>(configuration.GetSection(AuctionWorkerOptions.SectionName));
+        services.AddHostedService<AuctionClosingWorker>();
     }
 
     private static void ConfigureAuthentication(IServiceCollection services, IConfiguration configuration)

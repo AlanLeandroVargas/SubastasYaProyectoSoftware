@@ -15,6 +15,18 @@ public class LedgerEntryTests
     private const int WalletId = 7;
     private const int AuctionId = 42;
 
+    private static Wallet CreateWalletWith(decimal creditedAmount)
+    {
+        var user = new User("postor@test.com", "Postor", "Postor_X", "hash", Now);
+
+        if (creditedAmount > decimal.Zero)
+        {
+            user.Wallet.Credit(creditedAmount);
+        }
+
+        return user.Wallet;
+    }
+
     [Fact]
     public void Deposit_HasNoAssociatedAuction()
     {
@@ -46,6 +58,37 @@ public class LedgerEntryTests
     }
 
     [Fact]
+    public void Payment_AndPayout_ReferenceTheSettledAuction()
+    {
+        var payment = LedgerEntry.Payment(WalletId, 30_000m, Now, AuctionId);
+        var payout = LedgerEntry.Payout(WalletId, 30_000m, Now, AuctionId);
+
+        Assert.Equal(LedgerEntryType.Payment, payment.Type);
+        Assert.Equal(LedgerEntryType.Payout, payout.Type);
+        Assert.Equal(AuctionId, payment.AuctionId);
+        Assert.Equal(AuctionId, payout.AuctionId);
+    }
+
+    [Fact]
+    public void Settlement_MovesTheSameAmountOutOfTheBuyerAndIntoTheSeller()
+    {
+        var buyer = CreateWalletWith(230_000m);
+        var seller = CreateWalletWith(decimal.Zero);
+
+        buyer.Hold(30_000m);
+
+        // Liquidación de la adjudicación: la garantía sale del comprador y entra al vendedor.
+        buyer.SettleWithHold(30_000m);
+        seller.Credit(30_000m);
+
+        Assert.Equal(200_000m, buyer.TotalBalance);
+        Assert.Equal(decimal.Zero, buyer.HeldBalance);
+        Assert.Equal(200_000m, buyer.AvailableBalance);
+        Assert.Equal(30_000m, seller.TotalBalance);
+        Assert.Equal(30_000m, seller.AvailableBalance);
+    }
+
+    [Fact]
     public void EveryEntry_StoresItsAmountAsAPositiveNumber()
     {
         // El signo lo aporta el tipo de asiento, no el importe: así la restricción CHECK de la
@@ -54,7 +97,9 @@ public class LedgerEntryTests
         [
             LedgerEntry.Deposit(WalletId, 1_000m, Now),
             LedgerEntry.Hold(WalletId, 1_000m, Now, AuctionId),
-            LedgerEntry.Release(WalletId, 1_000m, Now, AuctionId)
+            LedgerEntry.Release(WalletId, 1_000m, Now, AuctionId),
+            LedgerEntry.Payment(WalletId, 1_000m, Now, AuctionId),
+            LedgerEntry.Payout(WalletId, 1_000m, Now, AuctionId)
         ];
 
         Assert.All(entries, entry => Assert.True(entry.Amount > decimal.Zero));
