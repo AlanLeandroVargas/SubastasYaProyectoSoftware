@@ -3,4 +3,8 @@
   <ItemGroup>
     <ProjectReference Include="..\SubastaYa.Domain\SubastaYa.Domain.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Sólo las abstracciones del contenedor: la capa no depende de una implementación concreta. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.0" />
+  </ItemGroup>
 </Project>
