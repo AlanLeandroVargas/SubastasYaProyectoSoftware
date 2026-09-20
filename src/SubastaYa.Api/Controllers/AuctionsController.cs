@@ -1,4 +1,6 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using SubastaYa.Application.Abstractions.Security;
 using SubastaYa.Application.Abstractions.Services;
 using SubastaYa.Application.Common;
 using SubastaYa.Application.Dtos;
@@ -6,19 +8,31 @@ using SubastaYa.Application.Dtos;
 namespace SubastaYa.Api.Controllers;
 
 /// <summary>
-/// Recurso principal de la API. Por ahora expone sólo las operaciones de lectura del catálogo;
-/// la publicación y el registro de pujas llegan con sus propias funcionalidades.
+/// Recurso principal de la API. Expone el catálogo, el detalle de la sala en vivo y el
+/// subrecurso anidado de ofertas.
+///
+/// Las lecturas siguen siendo públicas: si hay sesión la respuesta se personaliza, y si no la hay
+/// se devuelve la misma información sin marcas personales.
 /// </summary>
 [ApiController]
 [Route("api/v1/auctions")]
 [Produces("application/json")]
 public sealed class AuctionsController : ControllerBase
 {
-    private readonly ICatalogService _catalog;
+    private const int DefaultHistorySize = 25;
 
-    public AuctionsController(ICatalogService catalog)
+    private readonly ICatalogService _catalog;
+    private readonly IBiddingService _bidding;
+    private readonly ICurrentUser _currentUser;
+
+    public AuctionsController(
+        ICatalogService catalog,
+        IBiddingService bidding,
+        ICurrentUser currentUser)
     {
         _catalog = catalog;
+        _bidding = bidding;
+        _currentUser = currentUser;
     }
 
     /// <summary>Lista el catálogo con filtros de estado, categoría, rango de precios y orden.</summary>
@@ -34,5 +48,43 @@ public sealed class AuctionsController : ControllerBase
     [ProducesResponseType(typeof(AuctionDetailDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<AuctionDetailDto>> GetById(int id, CancellationToken cancellationToken) =>
-        Ok(await _catalog.GetDetailAsync(id, cancellationToken));
+        Ok(await _catalog.GetDetailAsync(id, _currentUser.Id, cancellationToken));
+
+    /// <summary>Historial de ofertas de la subasta, con los postores seudonimizados.</summary>
+    [HttpGet("{id:int}/bids")]
+    [ProducesResponseType(typeof(IReadOnlyList<BidDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<BidDto>>> ListBids(
+        int id,
+        CancellationToken cancellationToken,
+        [FromQuery] int count = DefaultHistorySize) =>
+        Ok(await _catalog.GetBidHistoryAsync(id, _currentUser.Id, count, cancellationToken));
+
+    /// <summary>
+    /// Registra una oferta. Evalúa estado, incremento mínimo, saldo disponible y la regla
+    /// anti-sniping dentro de una única transacción atómica.
+    /// </summary>
+    /// <response code="201">La oferta fue aceptada y los fondos quedaron congelados como garantía.</response>
+    /// <response code="400">El monto no alcanza el incremento mínimo exigido.</response>
+    /// <response code="403">Un vendedor no puede ofertar en su propia subasta.</response>
+    /// <response code="404">La subasta no existe.</response>
+    /// <response code="409">La subasta no admite ofertas, o hubo un conflicto de concurrencia.</response>
+    /// <response code="422">El saldo disponible no alcanza para respaldar la oferta.</response>
+    [HttpPost("{id:int}/bids")]
+    [Authorize]
+    [ProducesResponseType(typeof(BidResultDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status422UnprocessableEntity)]
+    public async Task<ActionResult<BidResultDto>> CreateBid(
+        int id,
+        [FromBody] PlaceBidRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _bidding.PlaceBidAsync(id, _currentUser.RequireId(), request, cancellationToken);
+
+        return CreatedAtAction(nameof(ListBids), new { id }, result);
+    }
 }

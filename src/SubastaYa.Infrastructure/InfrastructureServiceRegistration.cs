@@ -2,11 +2,13 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SubastaYa.Application.Abstractions.Persistence;
+using SubastaYa.Application.Abstractions.RealTime;
 using SubastaYa.Application.Abstractions.Security;
 using SubastaYa.Application.Abstractions.Time;
 using SubastaYa.Infrastructure.Persistence;
 using SubastaYa.Infrastructure.Persistence.Repositories;
 using SubastaYa.Infrastructure.Persistence.Seeding;
+using SubastaYa.Infrastructure.RealTime;
 using SubastaYa.Infrastructure.Security;
 using SubastaYa.Infrastructure.Time;
 
@@ -37,8 +39,13 @@ public static class InfrastructureServiceRegistration
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IWalletRepository, WalletRepository>();
         services.AddScoped<ILedgerRepository, LedgerRepository>();
+        services.AddScoped<IBidRepository, BidRepository>();
+        services.AddScoped<IAuditRepository, AuditRepository>();
 
         services.AddScoped<IUnitOfWork, UnitOfWork>();
+
+        // Mientras no exista el transporte en tiempo real, la difusión sólo deja traza en el log.
+        services.AddSingleton<IAuctionNotifier, LoggingAuctionNotifier>();
 
         services.AddScoped<DatabaseSeeder>();
 

@@ -6,5 +6,7 @@
   <ItemGroup>
     <!-- Sólo las abstracciones del contenedor: la capa no depende de una implementación concreta. -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.0" />
+    <!-- Sólo el contrato de registro: los casos de uso dejan traza sin atarse a un proveedor. -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
   </ItemGroup>
 </Project>

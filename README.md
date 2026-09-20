@@ -71,6 +71,7 @@ modificar el estado por fuera de estos métodos.
 | `User` | Participante; nace siempre con su billetera asociada. |
 | `Category` | Clasificación temática del catálogo. |
 | `LedgerEntry` | Asiento inmutable del libro mayor: todo movimiento de saldo deja su huella. |
+| `AuditRecord` | Traza inmutable de los eventos críticos, incluidos los intentos rechazados. |
 
 ### Reglas implementadas
 
@@ -96,7 +97,8 @@ monto a liberar, para que el caso de uso lo resuelva dentro de una transacción 
 
 `Auction` y `Wallet` exponen una propiedad `Version` que la capa de persistencia mapea como
 `rowversion`. Es el mecanismo de **bloqueo optimista** exigido por la consigna. Se modeló desde el
-dominio antes de que existiera la base de datos, y hoy ya protege los movimientos de saldo.
+dominio antes de que existiera la base de datos, y hoy protege tanto los movimientos de saldo
+como el registro de pujas.
 
 ---
 
@@ -106,12 +108,16 @@ dominio antes de que existiera la base de datos, y hoy ya protege los movimiento
 dotnet test
 ```
 
-39 pruebas unitarias cubren las invariantes del negocio sin tocar infraestructura: incremento
+41 pruebas unitarias cubren las invariantes del negocio sin tocar infraestructura: incremento
 mínimo, ventana anti-sniping (45 s extiende, 60 s extiende, 61 s no), puja del vendedor en su
 propia subasta, puja del postor que ya lidera, subasta programada o vencida, transiciones a
 `Completed` / `Unsold`, las reglas de la billetera (retención, liberación, liquidación y
 traspaso de liderazgo entre postores) y el libro mayor, incluida la prueba de que los asientos
 reconstruyen exactamente el saldo de la billetera.
+
+Se comprueba además que `EnsureBidIsAdmissible` **no mutile el agregado**: el caso de uso valida
+antes de tocar las billeteras, así que esa comprobación tiene que poder fallar sin dejar la
+subasta a medio modificar.
 
 ---
 
@@ -128,9 +134,12 @@ URLs. Base: `/api/v1`.
 | `GET` | `/categories` | — | Listado de categorías |
 | `GET` | `/auctions` | — | Catálogo con filtros, orden y paginación |
 | `GET` | `/auctions/{id}` | — | Detalle de la subasta con su historial de ofertas |
+| `GET` | `/auctions/{id}/bids` | — | Historial de ofertas, con los postores seudonimizados |
+| `POST` | `/auctions/{id}/bids` | ✔ | Registrar una oferta |
 | `GET` | `/wallets/me` | ✔ | Saldo total, retenido y disponible |
 | `POST` | `/wallets/me/deposits` | ✔ | Acreditar fondos simulados |
 | `GET` | `/wallets/me/transactions` | ✔ | Historial de movimientos |
+| `GET` | `/audit-logs` | ✔ | Traza de auditoría, de sólo lectura |
 
 **Filtros de `GET /auctions`**: `status` (`Active` · `Scheduled` · `Completed` · `Unsold`),
 `categoryId`, `minPrice`, `maxPrice`, `search`, `sort` (`EndingSoonest` · `HighestBid` ·
@@ -264,6 +273,96 @@ curl -s "http://localhost:5080/api/v1/wallets/me/transactions?count=20"   -H "Au
 
 ---
 
+## Registro de pujas
+
+Es el caso de uso central. Una oferta aceptada tiene que producir, **todo o nada**, cinco efectos:
+
+1. congelar la garantía del nuevo líder,
+2. liberar la del postor desplazado,
+3. registrar la puja y actualizar el importe líder,
+4. correr el cierre si la oferta entró en la ventana anti-sniping,
+5. dejar constancia en el libro mayor y en la auditoría.
+
+Si cualquiera falla, se revierte el bloque completo. No puede quedar dinero congelado respaldando
+una oferta que nunca se registró, ni una puja sin su garantía detrás.
+
+### Orden de validación
+
+El agregado valida **antes** de que se toque una sola billetera: estado de la subasta, luego
+elegibilidad del postor, luego monto contra el incremento mínimo, y recién entonces el saldo. Una
+oferta inadmisible no llega a mover dinero ni siquiera dentro de una transacción que después se
+revertiría.
+
+| Situación | Respuesta |
+|---|:---:|
+| Oferta aceptada | `201` |
+| Monto por debajo del incremento mínimo, o menor o igual a cero | `400` |
+| Sin sesión | `401` |
+| El vendedor puja en su propia subasta | `403` |
+| La subasta no existe | `404` |
+| Subasta programada, vencida, o el líder puja contra sí mismo | `409` |
+| Conflicto de concurrencia | `409` |
+| Saldo disponible insuficiente | `422` |
+
+### Auditoría
+
+`AuditRecord` complementa al libro mayor: éste sólo conoce movimientos de dinero, mientras que la
+auditoría también guarda los intentos **rechazados**, que son los que explican por qué una puja no
+prosperó. El detalle viaja como JSON sin esquema fijo porque cada acción necesita datos distintos,
+y forzar columnas dejaría la tabla llena de nulos.
+
+El registro del intento fallido se escribe **después** de la reversión y en una transacción propia:
+tiene que sobrevivir justamente a la transacción que se revirtió. Si esa escritura falla, se deja
+traza en el log y se propaga el error de negocio original, porque una falla al auditar no debe
+reemplazar al mensaje que el usuario necesita ver.
+
+La auditoría cubre rechazos **de negocio**. Un monto menor o igual a cero se descarta antes de
+llegar al dominio y no se audita: es una petición mal formada, no una decisión del negocio.
+
+> A diferencia de las dos funcionalidades anteriores, ésta **no exige regenerar la base**: la
+> migración sólo agrega la tabla `AuditLog` y los datos semilla no cambiaron. Verificado revirtiendo
+> la migración sobre una base ya poblada y volviéndola a aplicar: las 5 subastas, los 4 usuarios y
+> sus asientos quedaron intactos y la auditoría arrancó vacía, que es lo correcto.
+
+### Difusión en tiempo real: puerto declarado, transporte pendiente
+
+`IAuctionNotifier` es el puerto hacia la sala en vivo. La capa de aplicación publica el evento sin
+saber qué hay por debajo, y hoy lo satisface `LoggingAuctionNotifier`, que **deja el evento en el
+log en lugar de empujarlo a los clientes**.
+
+No es relleno: hace observable qué se habría difundido, que es exactamente lo que después habrá
+que ver llegar a la sala. Cuando entre SignalR, el reemplazo se limita a registrar otra
+implementación del mismo puerto; ni el servicio de pujas ni el dominio se enteran.
+
+La difusión ocurre **fuera** de la transacción: anunciar una puja antes de confirmarla podría
+publicar una oferta que después se revierte.
+
+### Concurrencia verificada
+
+Con 48 ofertas simultáneas repartidas en 8 rondas, dos compradores ofertando el mismo monto en el
+mismo instante:
+
+```
+por ronda:  1 aceptada   ·   3 rechazos por estado   ·   2 conflictos de concurrencia
+```
+
+Y al terminar, las invariantes se sostienen exactamente:
+
+* el libro mayor de cada billetera reconstruye su saldo al centavo;
+* por subasta, la garantía viva (`HOLD` menos `RELEASE`) es **igual al importe líder**: sólo el
+  líder tiene fondos congelados, nunca dos postores a la vez;
+* la cantidad de ofertas nuevas coincide con la cantidad de respuestas `201`.
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:5080/api/v1/sessions   -H "Content-Type: application/json"   -d '{"email":"comprador2@test.com","password":"Password123!"}'   | python -c "import sys,json;print(json.load(sys.stdin)['token'])")
+
+curl -s -X POST http://localhost:5080/api/v1/auctions/1/bids   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json"   -d '{"amount":50000}'
+
+curl -s "http://localhost:5080/api/v1/audit-logs?count=10" -H "Authorization: Bearer $TOKEN"
+```
+
+---
+
 ## Persistencia
 
 Entity Framework Core con enfoque **Code-First**: el esquema relacional se deriva de las
@@ -284,6 +383,7 @@ dependencias.
 | `Auctions` | Subastas. `Status` se guarda como texto legible. |
 | `Bids` | Historial de ofertas, con índice `(AuctionId, Amount)`. |
 | `LedgerEntries` | Libro mayor de las billeteras, con índice `(WalletId, OccurredAt)`. |
+| `AuditLog` | Traza de auditoría. Clave `bigint`: es la tabla que más crece, porque registra también los intentos rechazados. |
 
 **Integridad garantizada por el motor**, no sólo por el código:
 
@@ -297,8 +397,8 @@ dependencias.
 | `CK_LedgerEntries_PositiveAmount` | LedgerEntries | `Amount > 0` |
 
 `Auctions.Version` y `Wallets.Version` se mapean como **`rowversion`**: es el soporte del bloqueo
-optimista. `Wallets.Version` ya está en uso por los depósitos; `Auctions.Version` entra en juego
-con el registro de pujas.
+optimista, y ambos ya están en uso: `Wallets.Version` protege los movimientos de saldo y
+`Auctions.Version` impide que dos pujas simultáneas se pisen sobre la misma subasta.
 
 `AvailableBalance` **no se persiste**: es un dato derivado (`TotalBalance - HeldBalance`) que
 calcula el dominio. Almacenarlo introduciría un tercer valor que podría quedar desincronizado.
@@ -409,9 +509,9 @@ El desarrollo avanza por funcionalidad, una por *pull request*.
 - [x] Persistencia con EF Core, migraciones y datos semilla
 - [x] Autenticación con JWT
 - [x] Billetera virtual y libro mayor
-- [ ] Registro de pujas con garantías atómicas y bloqueo optimista
+- [x] Registro de pujas con garantías atómicas y bloqueo optimista
 - [ ] Proceso en segundo plano de adjudicación
-- [ ] Sincronización en tiempo real
+- [ ] Sincronización en tiempo real (reemplaza al notificador provisional)
 - [ ] Frontend
 - [ ] Prueba de concurrencia
 
@@ -428,13 +528,13 @@ SubastasYaProyectoSoftware/
 │   └── SubastaYa.Domain.Tests/      # Pruebas unitarias del dominio (xUnit)
 └── src/
     ├── SubastaYa.Domain/
-    │   ├── Entities/                # Auction, Wallet, LedgerEntry, Bid, User, Category
-    │   ├── Enums/                   # AuctionStatus, LedgerEntryType
+    │   ├── Entities/                # Auction, Wallet, LedgerEntry, AuditRecord, Bid, User, Category
+    │   ├── Enums/                   # AuctionStatus, LedgerEntryType, AuditAction, AuditedEntity
     │   ├── Exceptions/              # Jerarquía de errores de negocio
     │   ├── Rules/                   # Parámetros de anti-sniping
     │   └── Results/                 # BidPlacementResult
     ├── SubastaYa.Application/
-    │   ├── Abstractions/            # Puertos: persistencia, seguridad y reloj
+    │   ├── Abstractions/            # Puertos: persistencia, seguridad, reloj y tiempo real
     │   ├── Dtos/                    # Contratos de entrada y salida
     │   ├── Mapping/                 # Entidad -> DTO
     │   ├── Common/                  # PagedResult
@@ -445,6 +545,7 @@ SubastasYaProyectoSoftware/
     │   │   ├── Migrations/          # Code-First
     │   │   ├── Repositories/
     │   │   └── Seeding/
+    │   ├── RealTime/                # Notificador provisional basado en log
     │   ├── Security/                # PBKDF2 y emisión de JWT
     │   └── Time/                    # Reloj del sistema
     └── SubastaYa.Api/
