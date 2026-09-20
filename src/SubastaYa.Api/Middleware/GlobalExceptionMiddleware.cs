@@ -57,6 +57,7 @@ public sealed class GlobalExceptionMiddleware
         AuthorizationException => Build(StatusCodes.Status403Forbidden, "Operación no permitida", exception.Message),
         ResourceNotFoundException => Build(StatusCodes.Status404NotFound, "Recurso inexistente", exception.Message),
         StateConflictException => Build(StatusCodes.Status409Conflict, "Conflicto con el estado actual", exception.Message),
+        ConcurrencyConflictException => Build(StatusCodes.Status409Conflict, "Conflicto de concurrencia", exception.Message),
         InsufficientFundsException => Build(StatusCodes.Status422UnprocessableEntity, "Saldo insuficiente", exception.Message),
         _ => Build(StatusCodes.Status400BadRequest, "Solicitud inválida", exception.Message)
     };

@@ -11,6 +11,7 @@ public static class ApplicationServiceRegistration
     {
         services.AddScoped<ICatalogService, CatalogService>();
         services.AddScoped<IAuthenticationService, AuthenticationService>();
+        services.AddScoped<IWalletService, WalletService>();
 
         return services;
     }

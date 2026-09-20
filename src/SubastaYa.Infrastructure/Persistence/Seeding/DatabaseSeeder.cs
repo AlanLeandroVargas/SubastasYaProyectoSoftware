@@ -12,6 +12,9 @@ namespace SubastaYa.Infrastructure.Persistence.Seeding;
 /// casos de prueba se definen en relación al instante actual: "cierra en 25 minutos", "venció
 /// hace 2 minutos". Una semilla estática quedaría obsoleta apenas se genera la migración.
 ///
+/// Todo movimiento de saldo deja su asiento en el libro mayor, igual que en la aplicación real:
+/// así el historial de cada billetera explica por completo su saldo desde el primer arranque.
+///
 /// Los textos del catálogo van en español: son contenido que ve el usuario final.
 /// </summary>
 internal sealed class DatabaseSeeder
@@ -41,7 +44,7 @@ internal sealed class DatabaseSeeder
         var categories = await SeedCategoriesAsync(cancellationToken);
         var users = await SeedUsersAndWalletsAsync(now, cancellationToken);
 
-        SeedAuctions(users, categories, now);
+        await SeedAuctionsAsync(users, categories, now, cancellationToken);
 
         await _context.SaveChangesAsync(cancellationToken);
     }
@@ -64,8 +67,8 @@ internal sealed class DatabaseSeeder
 
     /// <summary>
     /// Crea los cuatro usuarios de prueba con sus depósitos iniciales.
-    /// Se persisten antes que las subastas porque el replay de las pujas históricas necesita el
-    /// identificador definitivo de cada usuario.
+    /// Se persisten antes que las subastas porque tanto el replay de las pujas históricas como
+    /// los asientos del libro mayor necesitan el identificador definitivo de cada billetera.
     /// </summary>
     private async Task<IReadOnlyDictionary<string, User>> SeedUsersAndWalletsAsync(
         DateTime now,
@@ -80,12 +83,12 @@ internal sealed class DatabaseSeeder
         await _context.SaveChangesAsync(cancellationToken);
 
         // El vendedor arranca sin fondos: su saldo se construye con las ventas adjudicadas.
-        firstBuyer.Wallet.Credit(150_000m);
+        Deposit(firstBuyer, 150_000m, now);
 
         // El segundo comprador incluye la garantía de la subasta vencida que todavía está
         // pendiente de adjudicación, por eso su total supera a los $200.000 disponibles.
-        secondBuyer.Wallet.Credit(230_000m);
-        brokeBuyer.Wallet.Credit(500m);
+        Deposit(secondBuyer, 230_000m, now);
+        Deposit(brokeBuyer, 500m, now);
 
         await _context.SaveChangesAsync(cancellationToken);
 
@@ -98,29 +101,32 @@ internal sealed class DatabaseSeeder
         };
     }
 
-    private void SeedAuctions(
+    private async Task SeedAuctionsAsync(
         IReadOnlyDictionary<string, User> users,
         IReadOnlyDictionary<string, Category> categories,
-        DateTime now)
+        DateTime now,
+        CancellationToken cancellationToken)
     {
         var seller = users["seller"];
         var firstBuyer = users["firstBuyer"];
         var secondBuyer = users["secondBuyer"];
 
-        CreateStandardActiveAuction(seller, firstBuyer, secondBuyer, categories["Tecnología"], now);
-        CreateCriticalActiveAuction(seller, categories["Coleccionables"], now);
-        CreateScheduledAuction(seller, categories["Indumentaria"], now);
-        CreateExpiredAuctionWithWinner(seller, secondBuyer, categories["Vehículos"], now);
-        CreateExpiredAuctionWithoutBids(seller, categories["Coleccionables"], now);
+        await CreateStandardActiveAuctionAsync(
+            seller, firstBuyer, secondBuyer, categories["Tecnología"], now, cancellationToken);
+        await CreateCriticalActiveAuctionAsync(seller, categories["Coleccionables"], now, cancellationToken);
+        await CreateScheduledAuctionAsync(seller, categories["Indumentaria"], now, cancellationToken);
+        await CreateExpiredAuctionWithWinnerAsync(seller, secondBuyer, categories["Vehículos"], now, cancellationToken);
+        await CreateExpiredAuctionWithoutBidsAsync(seller, categories["Coleccionables"], now, cancellationToken);
     }
 
     /// <summary>Caso 1: subasta en curso que cierra en 25 minutos, con dos pujas previas y líder en $45.000.</summary>
-    private void CreateStandardActiveAuction(
+    private async Task CreateStandardActiveAuctionAsync(
         User seller,
         User firstBuyer,
         User secondBuyer,
         Category category,
-        DateTime now)
+        DateTime now,
+        CancellationToken cancellationToken)
     {
         var auction = Auction.Publish(
             seller.Id,
@@ -134,14 +140,18 @@ internal sealed class DatabaseSeeder
             endsAt: now.AddMinutes(25),
             now);
 
-        _context.Auctions.Add(auction);
+        await PersistAuctionAsync(auction, cancellationToken);
 
         PlaceHistoricBid(auction, secondBuyer, 40_000m, now.AddMinutes(-12));
         PlaceHistoricBid(auction, firstBuyer, 45_000m, now.AddMinutes(-4));
     }
 
     /// <summary>Caso 2: subasta en zona crítica que cierra en 90 segundos, para probar la alerta visual.</summary>
-    private void CreateCriticalActiveAuction(User seller, Category category, DateTime now)
+    private async Task CreateCriticalActiveAuctionAsync(
+        User seller,
+        Category category,
+        DateTime now,
+        CancellationToken cancellationToken)
     {
         var auction = Auction.Publish(
             seller.Id,
@@ -155,11 +165,15 @@ internal sealed class DatabaseSeeder
             endsAt: now.AddSeconds(90),
             now);
 
-        _context.Auctions.Add(auction);
+        await PersistAuctionAsync(auction, cancellationToken);
     }
 
     /// <summary>Caso 3: subasta programada para comenzar en 24 horas, con las pujas bloqueadas.</summary>
-    private void CreateScheduledAuction(User seller, Category category, DateTime now)
+    private async Task CreateScheduledAuctionAsync(
+        User seller,
+        Category category,
+        DateTime now,
+        CancellationToken cancellationToken)
     {
         var auction = Auction.Publish(
             seller.Id,
@@ -173,7 +187,7 @@ internal sealed class DatabaseSeeder
             endsAt: now.AddHours(26),
             now);
 
-        _context.Auctions.Add(auction);
+        await PersistAuctionAsync(auction, cancellationToken);
     }
 
     /// <summary>
@@ -181,7 +195,12 @@ internal sealed class DatabaseSeeder
     /// Queda pendiente de adjudicación hasta que exista el proceso en segundo plano: la garantía
     /// del ganador sigue congelada, que es exactamente el estado que ese proceso deberá resolver.
     /// </summary>
-    private void CreateExpiredAuctionWithWinner(User seller, User winner, Category category, DateTime now)
+    private async Task CreateExpiredAuctionWithWinnerAsync(
+        User seller,
+        User winner,
+        Category category,
+        DateTime now,
+        CancellationToken cancellationToken)
     {
         var auction = Auction.Publish(
             seller.Id,
@@ -195,14 +214,19 @@ internal sealed class DatabaseSeeder
             endsAt: now.AddMinutes(10),
             now);
 
-        _context.Auctions.Add(auction);
+        await PersistAuctionAsync(auction, cancellationToken);
+
         PlaceHistoricBid(auction, winner, 30_000m, now.AddHours(-1));
 
         ForceClosingDate(auction, now.AddMinutes(-2));
     }
 
     /// <summary>Caso 5: subasta vencida sin ninguna oferta, pendiente de pasar a desierta.</summary>
-    private void CreateExpiredAuctionWithoutBids(User seller, Category category, DateTime now)
+    private async Task CreateExpiredAuctionWithoutBidsAsync(
+        User seller,
+        Category category,
+        DateTime now,
+        CancellationToken cancellationToken)
     {
         var auction = Auction.Publish(
             seller.Id,
@@ -216,18 +240,36 @@ internal sealed class DatabaseSeeder
             endsAt: now.AddMinutes(10),
             now);
 
-        _context.Auctions.Add(auction);
+        await PersistAuctionAsync(auction, cancellationToken);
 
         ForceClosingDate(auction, now.AddMinutes(-5));
+    }
+
+    /// <summary>
+    /// Inserta la subasta de inmediato: los asientos de las pujas históricas referencian su
+    /// identificador, y ése sólo existe una vez persistida la fila.
+    /// </summary>
+    private async Task PersistAuctionAsync(Auction auction, CancellationToken cancellationToken)
+    {
+        _context.Auctions.Add(auction);
+        await _context.SaveChangesAsync(cancellationToken);
     }
 
     /// <summary>Crea un usuario de prueba con la contraseña de demostración ya hasheada.</summary>
     private User CreateUser(string email, string name, string pseudonym, DateTime now) =>
         new(email, name, pseudonym, _passwordHasher.Hash(DemoPassword), now);
 
+    /// <summary>Acredita fondos iniciales dejando el asiento que los justifica.</summary>
+    private void Deposit(User user, decimal amount, DateTime now)
+    {
+        user.Wallet.Credit(amount);
+        _context.LedgerEntries.Add(LedgerEntry.Deposit(user.Wallet.Id, amount, now));
+    }
+
     /// <summary>
     /// Reproduce una puja histórica respetando las mismas reglas de garantía que aplicará el caso
-    /// de uso real: se congela el saldo del nuevo líder y se libera el del anterior.
+    /// de uso real: se congela el saldo del nuevo líder y se libera el del anterior, y cada
+    /// movimiento queda asentado en el libro mayor de la billetera correspondiente.
     /// </summary>
     private void PlaceHistoricBid(Auction auction, User bidder, decimal amount, DateTime placedAt)
     {
@@ -235,6 +277,7 @@ internal sealed class DatabaseSeeder
         var escrowToRelease = auction.CurrentAmount;
 
         bidder.Wallet.Hold(amount);
+        _context.LedgerEntries.Add(LedgerEntry.Hold(bidder.Wallet.Id, amount, placedAt, auction.Id));
 
         if (outbidBidderId is int displacedBidderId)
         {
@@ -244,6 +287,8 @@ internal sealed class DatabaseSeeder
                 .First(wallet => wallet.UserId == displacedBidderId);
 
             displacedWallet.ReleaseHold(escrowToRelease);
+            _context.LedgerEntries.Add(
+                LedgerEntry.Release(displacedWallet.Id, escrowToRelease, placedAt, auction.Id));
         }
 
         auction.PlaceBid(bidder.Id, amount, placedAt);

@@ -35,6 +35,10 @@ public static class InfrastructureServiceRegistration
         services.AddScoped<IAuctionRepository, AuctionRepository>();
         services.AddScoped<ICategoryRepository, CategoryRepository>();
         services.AddScoped<IUserRepository, UserRepository>();
+        services.AddScoped<IWalletRepository, WalletRepository>();
+        services.AddScoped<ILedgerRepository, LedgerRepository>();
+
+        services.AddScoped<IUnitOfWork, UnitOfWork>();
 
         services.AddScoped<DatabaseSeeder>();
 
