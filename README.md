@@ -57,6 +57,59 @@ hacia la aplicación y no al revés.
 
 ---
 
+## Modelo de dominio
+
+El dominio es **rico, no anémico**: las entidades deciden qué es válido y no se limitan a
+guardar datos. Un servicio nuevo no puede saltearse una invariante porque no tiene forma de
+modificar el estado por fuera de estos métodos.
+
+| Entidad | Responsabilidad |
+|---|---|
+| `Auction` | Admisión de pujas, cálculo del próximo monto válido, extensión anti-sniping y transiciones de estado. |
+| `Wallet` | Único punto por donde se mueve dinero: acreditar, congelar, liberar y liquidar garantías. |
+| `Bid` | Oferta inmutable: una vez creada forma parte del historial y no se modifica. |
+| `User` | Participante; nace siempre con su billetera asociada. |
+| `Category` | Clasificación temática del catálogo. |
+
+### Reglas implementadas
+
+* **Incremento mínimo**: cada oferta debe alcanzar `oferta líder + incremento mínimo`; la primera
+  puja debe alcanzar el precio base.
+* **Anti-sniping**: una puja dentro de los últimos **60 segundos** desplaza el cierre **2 minutos**.
+  Los parámetros viven en `AuctionRules`, no dispersos por el código.
+* **Elegibilidad**: un vendedor no puede ofertar en su propia subasta y el postor líder no puede
+  volver a pujar contra sí mismo.
+* **Ventana temporal**: el cierre debe ser posterior al inicio, la subasta debe durar al menos un
+  minuto y no puede publicarse una subasta que ya venció.
+* **Garantías (escrow)**: `AvailableBalance = TotalBalance - HeldBalance`. No se puede congelar
+  más de lo disponible ni liberar más de lo retenido.
+
+Los estados de la subasta son `Scheduled`, `Active`, `Completed` y `Unsold`. El dominio **no mueve
+dinero por su cuenta**: `PlaceBid` devuelve un `BidPlacementResult` con el postor superado y el
+monto a liberar, para que el caso de uso lo resuelva dentro de una transacción atómica.
+
+### Preparación para la concurrencia
+
+`Auction` y `Wallet` exponen una propiedad `Version` que la capa de persistencia mapeará como
+`rowversion`. Es el mecanismo de **bloqueo optimista** exigido por la consigna: se modela desde el
+dominio aunque todavía no haya base de datos.
+
+---
+
+## Pruebas
+
+```bash
+dotnet test
+```
+
+34 pruebas unitarias cubren las invariantes del negocio sin tocar infraestructura: incremento
+mínimo, ventana anti-sniping (45 s extiende, 60 s extiende, 61 s no), puja del vendedor en su
+propia subasta, puja del postor que ya lidera, subasta programada o vencida, transiciones a
+`Completed` / `Unsold`, y las reglas de la billetera (retención, liberación, liquidación y
+traspaso de liderazgo entre postores).
+
+---
+
 ## Puesta en marcha
 
 ### Requisitos
@@ -88,7 +141,7 @@ curl -s http://localhost:5080/api/v1/health
 El desarrollo avanza por funcionalidad, una por *pull request*.
 
 - [x] Estructura de la solución en capas y health check
-- [ ] Modelo de dominio y reglas de subasta
+- [x] Modelo de dominio y reglas de subasta
 - [ ] Catálogo de subastas (API de lectura)
 - [ ] Persistencia con EF Core, migraciones y datos semilla
 - [ ] Autenticación con JWT
@@ -107,8 +160,15 @@ El desarrollo avanza por funcionalidad, una por *pull request*.
 SubastasYaProyectoSoftware/
 ├── SubastaYa.sln
 ├── Directory.Build.props            # TargetFramework y opciones comunes
+├── tests/
+│   └── SubastaYa.Domain.Tests/      # Pruebas unitarias del dominio (xUnit)
 └── src/
-    ├── SubastaYa.Domain/            # Entidades y reglas de negocio
+    ├── SubastaYa.Domain/
+    │   ├── Entities/                # Auction, Wallet, Bid, User, Category
+    │   ├── Enums/                   # AuctionStatus
+    │   ├── Exceptions/              # Jerarquía de errores de negocio
+    │   ├── Rules/                   # Parámetros de anti-sniping
+    │   └── Results/                 # BidPlacementResult
     ├── SubastaYa.Application/       # Casos de uso y puertos
     ├── SubastaYa.Infrastructure/    # Implementación de los puertos
     └── SubastaYa.Api/               # Controladores REST y hosting
