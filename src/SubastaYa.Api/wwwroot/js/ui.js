@@ -17,6 +17,15 @@ const STATUS_LABELS = {
     UNSOLD: "Desierta"
 };
 
+/** Etiquetas en español para los tipos de asiento del libro mayor. */
+export const LEDGER_TYPE_LABELS = {
+    DEPOSIT: "Depósito",
+    HOLD: "Retención",
+    RELEASE: "Liberación",
+    PAYMENT: "Pago",
+    PAYOUT: "Cobro"
+};
+
 const currencyFormatter = new Intl.NumberFormat("es-AR", {
     style: "currency",
     currency: "ARS",
@@ -224,7 +233,10 @@ export function startCountdowns(onReachingZero) {
 // ---------------------------------------------------------------------------
 
 const NAVIGATION_LINKS = [
-    { label: "Catálogo", path: "/index.html", icon: "bi-grid" }
+    { label: "Catálogo", path: "/index.html", icon: "bi-grid" },
+    { label: "Publicar", path: "/publish.html", icon: "bi-plus-square", requiresSession: true },
+    { label: "Mi billetera", path: "/wallet.html", icon: "bi-wallet2", requiresSession: true },
+    { label: "Mis actividades", path: "/my-activity.html", icon: "bi-person-lines-fill", requiresSession: true }
 ];
 
 export function renderNavigation() {

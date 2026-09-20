@@ -141,6 +141,8 @@ URLs. Base: `/api/v1`.
 | `GET` | `/wallets/me` | ✔ | Saldo total, retenido y disponible |
 | `POST` | `/wallets/me/deposits` | ✔ | Acreditar fondos simulados |
 | `GET` | `/wallets/me/transactions` | ✔ | Historial de movimientos |
+| `GET` | `/users/me/bids` | ✔ | Subastas en las que participó el usuario |
+| `GET` | `/users/me/auctions` | ✔ | Subastas publicadas por el usuario |
 | `GET` | `/audit-logs` | ✔ | Traza de auditoría, de sólo lectura |
 | `WS` | `/hubs/auctions` | — | Canal SignalR de la sala en vivo |
 
@@ -520,7 +522,7 @@ framework no cubre: la identidad visual, los distintivos de estado y el contador
 | `session.js` | Guarda y recupera la sesión; una sesión vencida se descarta antes de usarla |
 | `api.js` | Único punto que conoce `fetch`, la ruta base y los códigos de estado |
 | `ui.js` | Formato, avisos flotantes, estados de carga, contador y barra de navegación |
-| `catalog.js` · `login.js` · `auction-room.js` | Una vista por pantalla, sin lógica compartida duplicada |
+| `catalog.js` · `login.js` · `auction-room.js` · `publish.js` · `wallet.js` · `activity.js` | Una vista por pantalla, sin lógica compartida duplicada |
 
 Las vistas nunca tocan `fetch` ni interpretan un código HTTP: reciben un `ApiError` ya traducido.
 Es la misma separación que en el backend, sólo que del otro lado del cable.
@@ -621,6 +623,48 @@ regresiva al inicio, subasta desierta con el reloj en "Cerrada", saldo insuficie
 advertencia ámbar y no como error, monto por debajo del mínimo rechazado en pantalla sin llamar al
 backend, identificador inválido con estado vacío, y a 375 px de ancho las columnas se apilan sin
 desborde horizontal.
+
+### Publicar, billetera y actividad
+
+**Publicar** replica en pantalla las reglas de coherencia del dominio —cierre posterior al inicio,
+duración mínima, cierre no vencido, incremento que no supere al precio base— y las revisa a medida
+que se completan los campos, no recién al enviar. El backend las vuelve a aplicar: la pantalla sólo
+anticipa el error, no decide. Al publicar, redirige a la sala de la subasta recién creada.
+
+**Mi billetera** muestra las tres métricas y el libro mayor completo, con cada tipo de asiento
+etiquetado y con su signo: un depósito suma, un pago resta, y una retención no lleva signo porque
+inmoviliza dinero sin gastarlo. Los movimientos originados en una subasta enlazan a su sala.
+
+**Mis actividades** separa en dos solapas lo que el usuario hizo como comprador y como vendedor.
+La segunda se carga bajo demanda, para no pedir datos que quizá nadie mire.
+
+| Como comprador | Como vendedor |
+|---|---|
+| Mi mayor oferta frente a la líder | Precio base y oferta líder |
+| Ganaste · Liderando · Superado · No adjudicada | Cantidad de ofertas y ganador |
+| | Recaudación: **sólo lo que el proceso de cierre liquidó** |
+
+Esa última fila importa: una subasta con ofertas pero todavía abierta recauda `$ 0`. Lo que cuenta
+es lo liquidado, no lo prometido.
+
+Del lado del backend, las participaciones usan un **include filtrado**: de cada subasta se cargan
+únicamente las ofertas de ese postor, así la diferencia entre su mayor oferta y la líder queda a la
+vista sin traer historiales ajenos.
+
+### Dos defectos encontrados al verificar
+
+Ambos en los campos numéricos, y ambos del mismo tipo: el atributo `step` de HTML imponía una
+restricción que el negocio no tiene.
+
+* En **publicar**, `min="1"` junto con `step="100"` hacía válidos sólo los valores `1, 101, 201…`.
+  Un precio base de `70.000` era rechazado por el navegador, y el mensaje que aparecía hablaba de
+  otra cosa ("debe ser mayor a cero").
+* En la **sala**, el paso del campo se fijaba en el incremento mínimo, de modo que sobre un mínimo
+  de `50.000` una oferta de `52.000` quedaba bloqueada. El dominio sólo exige **alcanzar** el
+  mínimo, no ser múltiplo del incremento.
+
+En los dos casos el campo pasó a `step="any"`: el mínimo se sigue validando y el incremento se
+comunica en el texto de ayuda, que es donde corresponde.
 
 ---
 
@@ -777,6 +821,9 @@ rm -f "$USERPROFILE/SubastaYaDb.mdf" "$USERPROFILE/SubastaYaDb_log.ldf"
 | **Aplicación** | <http://localhost:5080/> |
 | Iniciar sesión | <http://localhost:5080/login.html> |
 | Sala en vivo | <http://localhost:5080/auction.html?id=1> |
+| Publicar | <http://localhost:5080/publish.html> |
+| Mi billetera | <http://localhost:5080/wallet.html> |
+| Mis actividades | <http://localhost:5080/my-activity.html> |
 | Swagger UI | <http://localhost:5080/swagger> |
 | Health check | <http://localhost:5080/api/v1/health> |
 
@@ -801,7 +848,7 @@ El desarrollo avanza por funcionalidad, una por *pull request*.
 - [x] Sincronización en tiempo real con SignalR
 - [x] Frontend: catálogo e inicio de sesión
 - [x] Frontend: sala en vivo
-- [ ] Frontend: billetera y actividad
+- [x] Frontend: publicación, billetera y actividad
 - [ ] Prueba de concurrencia
 
 ---
@@ -848,5 +895,8 @@ SubastasYaProyectoSoftware/
             ├── js/                  # session, api, ui y una vista por pantalla
             ├── index.html           # Catálogo
             ├── auction.html         # Sala de subasta en vivo
+            ├── publish.html         # Publicar una subasta
+            ├── wallet.html          # Billetera y libro mayor
+            ├── my-activity.html     # Participaciones y publicaciones
             └── login.html           # Inicio de sesión
 ```

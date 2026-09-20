@@ -91,6 +91,31 @@ internal sealed class AuctionRepository : IAuctionRepository
             .Take(limit)
             .ToListAsync(cancellationToken);
 
+    /// <summary>Incluye al postor líder para poder nombrar al ganador de las ya adjudicadas.</summary>
+    public async Task<IReadOnlyList<Auction>> GetPublishedByAsync(
+        int sellerId,
+        CancellationToken cancellationToken = default) =>
+        await _context.Auctions
+            .AsNoTracking()
+            .Include(auction => auction.LeadingBidder)
+            .Where(auction => auction.SellerId == sellerId)
+            .OrderByDescending(auction => auction.EndsAt)
+            .ToListAsync(cancellationToken);
+
+    /// <summary>
+    /// Include filtrado: al panel del usuario sólo le interesan las ofertas de este postor, no
+    /// el historial completo de cada subasta en la que participó.
+    /// </summary>
+    public async Task<IReadOnlyList<Auction>> GetParticipatedByAsync(
+        int bidderId,
+        CancellationToken cancellationToken = default) =>
+        await _context.Auctions
+            .AsNoTracking()
+            .Include(auction => auction.Bids.Where(bid => bid.BidderId == bidderId))
+            .Where(auction => auction.Bids.Any(bid => bid.BidderId == bidderId))
+            .OrderByDescending(auction => auction.EndsAt)
+            .ToListAsync(cancellationToken);
+
     private static IQueryable<Auction> ApplyFilters(IQueryable<Auction> query, AuctionFilter filter)
     {
         if (filter.Status is not null)
