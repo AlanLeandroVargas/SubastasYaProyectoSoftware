@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Capa de infraestructura: implementa los puertos declarados por la capa de aplicación. -->
+  <ItemGroup>
+    <ProjectReference Include="..\SubastaYa.Application\SubastaYa.Application.csproj" />
+  </ItemGroup>
+</Project>

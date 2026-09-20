@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Capa de aplicación: casos de uso y puertos. Sólo depende del dominio. -->
+  <ItemGroup>
+    <ProjectReference Include="..\SubastaYa.Domain\SubastaYa.Domain.csproj" />
+  </ItemGroup>
+</Project>

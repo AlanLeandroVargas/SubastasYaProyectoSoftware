@@ -1,0 +1,3 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Capa de dominio: entidades, invariantes y reglas de negocio. No referencia ninguna otra capa. -->
+</Project>
