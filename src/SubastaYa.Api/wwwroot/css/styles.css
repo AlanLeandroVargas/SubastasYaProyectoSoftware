@@ -1,0 +1,319 @@
+/* ============================================================
+   SubastaYa - hoja de estilos propia
+   Complementa a Bootstrap 5: acá sólo se define lo que el
+   framework no cubre (identidad visual, estados de la subasta
+   y el contador regresivo crítico).
+   ============================================================ */
+
+:root {
+    --sy-background: #0f1420;
+    --sy-surface: #181f2e;
+    --sy-surface-raised: #212a3c;
+    --sy-border: #2c3750;
+    --sy-text: #e8ecf5;
+    --sy-text-muted: #98a3b8;
+    --sy-primary: #4f7cff;
+    --sy-primary-strong: #3a63dd;
+    --sy-success: #2fbf71;
+    --sy-warning: #f5a623;
+    --sy-danger: #ef4b5c;
+    --sy-radius: 14px;
+}
+
+body {
+    background: var(--sy-background);
+    color: var(--sy-text);
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+}
+
+a {
+    color: var(--sy-primary);
+    text-decoration: none;
+}
+
+a:hover {
+    color: #7b9cff;
+}
+
+/* ---------- Encabezado ---------- */
+
+.sy-navbar {
+    background: rgba(15, 20, 32, 0.92);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--sy-border);
+}
+
+.sy-brand {
+    font-weight: 700;
+    letter-spacing: -0.4px;
+    color: var(--sy-text) !important;
+}
+
+.sy-brand span {
+    color: var(--sy-primary);
+}
+
+.sy-navbar .nav-link {
+    color: var(--sy-text-muted);
+    font-weight: 500;
+}
+
+.sy-navbar .nav-link:hover,
+.sy-navbar .nav-link.active {
+    color: var(--sy-text);
+}
+
+/* ---------- Superficies ---------- */
+
+.sy-panel {
+    background: var(--sy-surface);
+    border: 1px solid var(--sy-border);
+    border-radius: var(--sy-radius);
+}
+
+.sy-muted {
+    color: var(--sy-text-muted);
+}
+
+.form-control,
+.form-select {
+    background: var(--sy-surface-raised);
+    border-color: var(--sy-border);
+    color: var(--sy-text);
+}
+
+.form-control:focus,
+.form-select:focus {
+    background: var(--sy-surface-raised);
+    border-color: var(--sy-primary);
+    box-shadow: 0 0 0 0.2rem rgba(79, 124, 255, 0.2);
+    color: var(--sy-text);
+}
+
+.form-control::placeholder {
+    color: #6c7891;
+}
+
+.btn-primary {
+    background: var(--sy-primary);
+    border-color: var(--sy-primary);
+}
+
+.btn-primary:hover:not(:disabled) {
+    background: var(--sy-primary-strong);
+    border-color: var(--sy-primary-strong);
+}
+
+/* ---------- Tarjetas del catálogo ---------- */
+
+.sy-card {
+    background: var(--sy-surface);
+    border: 1px solid var(--sy-border);
+    border-radius: var(--sy-radius);
+    overflow: hidden;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.18s ease, border-color 0.18s ease;
+}
+
+.sy-card:hover {
+    transform: translateY(-4px);
+    border-color: var(--sy-primary);
+}
+
+.sy-card-image {
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    width: 100%;
+    background: var(--sy-surface-raised);
+}
+
+.sy-card-body {
+    padding: 1rem 1.1rem 1.2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    flex: 1;
+}
+
+.sy-card-title {
+    font-size: 1.02rem;
+    font-weight: 600;
+    line-height: 1.35;
+    margin: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.sy-amount {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--sy-success);
+    line-height: 1;
+}
+
+/* ---------- Distintivos de estado ---------- */
+
+.sy-status {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    padding: 0.28rem 0.6rem;
+    border-radius: 999px;
+    text-transform: uppercase;
+}
+
+.sy-status-active {
+    background: rgba(47, 191, 113, 0.16);
+    color: #5fe0a0;
+}
+
+.sy-status-scheduled {
+    background: rgba(79, 124, 255, 0.16);
+    color: #8fabff;
+}
+
+.sy-status-completed {
+    background: rgba(152, 163, 184, 0.16);
+    color: var(--sy-text-muted);
+}
+
+.sy-status-unsold {
+    background: rgba(239, 75, 92, 0.16);
+    color: #ff8d99;
+}
+
+/* ---------- Contador regresivo ---------- */
+
+.sy-countdown {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+}
+
+.sy-countdown-normal {
+    color: var(--sy-text);
+}
+
+.sy-countdown-warning {
+    color: var(--sy-warning);
+}
+
+/* La zona crítica (último minuto) parpadea para alertar a los postores. */
+.sy-countdown-critical {
+    color: var(--sy-danger);
+    animation: sy-pulse 1s ease-in-out infinite;
+}
+
+@keyframes sy-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
+}
+
+/* ---------- Estados de carga y vacío ---------- */
+
+.sy-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.9rem;
+    padding: 3.5rem 1rem;
+    color: var(--sy-text-muted);
+}
+
+.sy-empty {
+    text-align: center;
+    padding: 3.5rem 1rem;
+    color: var(--sy-text-muted);
+}
+
+.sy-empty i {
+    font-size: 2.6rem;
+    display: block;
+    margin-bottom: 0.6rem;
+    opacity: 0.6;
+}
+
+/* ---------- Avisos flotantes ---------- */
+
+.sy-toasts {
+    position: fixed;
+    top: 1.1rem;
+    right: 1.1rem;
+    z-index: 1080;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    max-width: min(24rem, calc(100vw - 2rem));
+}
+
+.sy-toast {
+    border-radius: 12px;
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--sy-border);
+    background: var(--sy-surface-raised);
+    color: var(--sy-text);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+    display: flex;
+    gap: 0.7rem;
+    align-items: flex-start;
+    animation: sy-slide-in 0.2s ease-out;
+}
+
+.sy-toast-success { border-left: 4px solid var(--sy-success); }
+.sy-toast-error { border-left: 4px solid var(--sy-danger); }
+.sy-toast-info { border-left: 4px solid var(--sy-primary); }
+.sy-toast-warning { border-left: 4px solid var(--sy-warning); }
+
+@keyframes sy-slide-in {
+    from { opacity: 0; transform: translateX(18px); }
+    to { opacity: 1; transform: none; }
+}
+
+/* ---------- Componentes de Bootstrap sobre fondo oscuro ---------- */
+
+.list-group-item {
+    color: var(--sy-text);
+    border-color: var(--sy-border);
+}
+
+.list-group-item-action:hover,
+.list-group-item-action:focus {
+    background: var(--sy-surface-raised);
+    color: var(--sy-text);
+}
+
+.page-link {
+    background: var(--sy-surface);
+    border-color: var(--sy-border);
+    color: var(--sy-text);
+}
+
+.page-link:hover:not(:disabled) {
+    background: var(--sy-surface-raised);
+    border-color: var(--sy-primary);
+    color: var(--sy-text);
+}
+
+.page-item.active .page-link {
+    background: var(--sy-primary);
+    border-color: var(--sy-primary);
+}
+
+.page-item.disabled .page-link {
+    background: var(--sy-surface);
+    border-color: var(--sy-border);
+    color: #566179;
+}
+
+hr {
+    border-color: var(--sy-border);
+    opacity: 1;
+}
+
+code {
+    color: #8fabff;
+}

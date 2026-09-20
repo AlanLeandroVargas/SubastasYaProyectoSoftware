@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SubastaYa - Catálogo de subastas</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+    <link href="/css/styles.css" rel="stylesheet" />
+</head>
+<body>
+    <div data-navigation></div>
+
+    <main class="container py-4">
+        <header class="mb-4">
+            <h1 class="h3 mb-1">Subastas en vivo</h1>
+            <p class="sy-muted mb-0">Explorá el catálogo y seguí el tiempo restante de cada subasta.</p>
+        </header>
+
+        <section class="sy-panel p-3 p-md-4 mb-4" aria-label="Filtros de búsqueda">
+            <form id="filtersForm" class="row g-3">
+                <div class="col-12 col-md-4 col-lg-3">
+                    <label class="form-label sy-muted small" for="searchFilter">Buscar</label>
+                    <input type="search" class="form-control" id="searchFilter" placeholder="Título del producto" />
+                </div>
+
+                <div class="col-6 col-md-4 col-lg-2">
+                    <label class="form-label sy-muted small" for="statusFilter">Estado</label>
+                    <select class="form-select" id="statusFilter">
+                        <option value="">Todas</option>
+                        <option value="Active">Activas</option>
+                        <option value="Scheduled">Próximas</option>
+                        <option value="Completed">Finalizadas</option>
+                        <option value="Unsold">Desiertas</option>
+                    </select>
+                </div>
+
+                <div class="col-6 col-md-4 col-lg-2">
+                    <label class="form-label sy-muted small" for="categoryFilter">Categoría</label>
+                    <select class="form-select" id="categoryFilter">
+                        <option value="">Todas</option>
+                    </select>
+                </div>
+
+                <div class="col-6 col-md-3 col-lg-2">
+                    <label class="form-label sy-muted small" for="minPriceFilter">Precio desde</label>
+                    <input type="number" class="form-control" id="minPriceFilter" min="0" step="1000" placeholder="0" />
+                </div>
+
+                <div class="col-6 col-md-3 col-lg-2">
+                    <label class="form-label sy-muted small" for="maxPriceFilter">Precio hasta</label>
+                    <input type="number" class="form-control" id="maxPriceFilter" min="0" step="1000" placeholder="Sin límite" />
+                </div>
+
+                <div class="col-12 col-md-6 col-lg-3">
+                    <label class="form-label sy-muted small" for="sortFilter">Ordenar por</label>
+                    <select class="form-select" id="sortFilter">
+                        <option value="EndingSoonest">Menor tiempo restante</option>
+                        <option value="HighestBid">Mayor puja</option>
+                        <option value="Newest">Más recientes</option>
+                    </select>
+                </div>
+
+                <div class="col-12 d-flex gap-2 justify-content-end">
+                    <button type="button" class="btn btn-outline-secondary" id="clearButton">
+                        <i class="bi bi-eraser me-1"></i>Limpiar
+                    </button>
+                    <button type="submit" class="btn btn-primary" id="searchButton">
+                        <i class="bi bi-search me-1"></i>Buscar
+                    </button>
+                </div>
+            </form>
+        </section>
+
+        <p class="sy-muted small" id="resultsSummary" aria-live="polite"></p>
+
+        <section id="auctionList" class="row g-3" aria-live="polite"></section>
+
+        <nav class="d-flex justify-content-center mt-4" aria-label="Paginación">
+            <ul class="pagination" id="pagination"></ul>
+        </nav>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script type="module" src="/js/catalog.js"></script>
+</body>
+</html>

@@ -504,6 +504,63 @@ petición HTTP, y aun así llega al navegador por el mismo canal.
 
 ---
 
+## Frontend
+
+Sin framework ni proceso de compilación: HTML, CSS y **JavaScript con módulos nativos**, servido
+como contenido estático desde la propia API. Así no hay un segundo servidor que levantar, y el
+proyecto se sigue ejecutando con un único `dotnet run`.
+
+Bootstrap 5 aporta la grilla y los componentes básicos; la hoja propia define sólo lo que el
+framework no cubre: la identidad visual, los distintivos de estado y el contador crítico.
+
+### Organización
+
+| Módulo | Responsabilidad |
+|---|---|
+| `session.js` | Guarda y recupera la sesión; una sesión vencida se descarta antes de usarla |
+| `api.js` | Único punto que conoce `fetch`, la ruta base y los códigos de estado |
+| `ui.js` | Formato, avisos flotantes, estados de carga, contador y barra de navegación |
+| `catalog.js` · `login.js` | Una vista por pantalla, sin lógica compartida duplicada |
+
+Las vistas nunca tocan `fetch` ni interpretan un código HTTP: reciben un `ApiError` ya traducido.
+Es la misma separación que en el backend, sólo que del otro lado del cable.
+
+### Decisiones
+
+* **El catálogo es público.** Funciona sin sesión, igual que el endpoint que consume. Iniciar
+  sesión sólo cambia la barra de navegación; el contenido es el mismo.
+* **Un único temporizador para todos los contadores.** Se refrescan juntos los elementos con
+  `[data-ends-at]` en lugar de crear un intervalo por tarjeta.
+* **Una subasta cerrada no muestra cuenta regresiva**, sino su desenlace. Mezclar ambas cosas
+  llevaba a leer "cierra en finalizada".
+* **Al llegar a cero se recarga el listado**, con unos segundos de margen: para entonces el
+  proceso en segundo plano ya resolvió el estado final y la tarjeta pasa a mostrarlo.
+* **Todo texto se escapa antes de entrar al DOM.** Los títulos de las subastas los escribe un
+  usuario, así que se tratan como datos y no como HTML.
+* **Los botones se deshabilitan mientras dura la operación**, para impedir envíos duplicados.
+* **Las cuentas de prueba se listan en la pantalla de acceso.** No hay registro público: el
+  conjunto de usuarios es fijo, y quien corrige la práctica necesita entrar sin leer el código.
+* **La contraseña se limpia al fallar, el email no.** Casi siempre el error está en la primera.
+
+### Verificado en el navegador
+
+```
+catálogo sin sesión            → 5 subastas, 4 estados distintos, contadores corriendo
+filtro por estado              → 1 resultado, sólo "Activa"
+filtro por categoría           → 2 resultados, ambos de Coleccionables
+búsqueda sin coincidencias     → estado vacío, sin errores
+contraseña incorrecta          → aviso rojo, contraseña limpiada, sigue en la pantalla
+credenciales correctas         → redirige al catálogo, la barra pasa a mostrar el seudónimo
+cerrar sesión                  → vuelve al catálogo anónimo y borra el token
+sesión vencida o corrupta      → se descarta sola, sin romper la página
+ancho de 375 px                → filtros apilados, menú plegado, sin desborde horizontal
+```
+
+Sin errores en la consola, y sin una sola petición fallida salvo el 401 del intento deliberado
+con contraseña incorrecta.
+
+---
+
 ## Persistencia
 
 Entity Framework Core con enfoque **Code-First**: el esquema relacional se deriva de las
@@ -637,9 +694,13 @@ dotnet ef database drop --force --project src/SubastaYa.Infrastructure --startup
 
 | Recurso | URL |
 |---|---|
+| **Aplicación** | <http://localhost:5080/> |
+| Iniciar sesión | <http://localhost:5080/login.html> |
 | Swagger UI | <http://localhost:5080/swagger> |
 | Health check | <http://localhost:5080/api/v1/health> |
-| Catálogo | <http://localhost:5080/api/v1/auctions> |
+
+No hace falta levantar nada aparte: el frontend se sirve como contenido estático desde la misma
+API, así que `dotnet run` alcanza para tener la aplicación completa.
 
 ---
 
@@ -657,7 +718,9 @@ El desarrollo avanza por funcionalidad, una por *pull request*.
 - [x] Publicación de subastas
 - [x] Proceso en segundo plano de adjudicación
 - [x] Sincronización en tiempo real con SignalR
-- [ ] Frontend
+- [x] Frontend: catálogo e inicio de sesión
+- [ ] Frontend: sala en vivo
+- [ ] Frontend: billetera y actividad
 - [ ] Prueba de concurrencia
 
 ---
@@ -695,8 +758,13 @@ SubastasYaProyectoSoftware/
     └── SubastaYa.Api/
         ├── BackgroundJobs/          # Proceso de cierre y su configuración
         ├── Configuration/           # Registro de servicios web
-        ├── Hubs/                    # Canal SignalR de la sala en vivo
         ├── Controllers/
+        ├── Hubs/                    # Canal SignalR de la sala en vivo
         ├── Middleware/              # Manejo global de excepciones
-        └── Security/                # Usuario actual desde el token
+        ├── Security/                # Usuario actual desde el token
+        └── wwwroot/                 # Frontend servido como contenido estático
+            ├── css/styles.css       # Identidad visual sobre Bootstrap
+            ├── js/                  # session, api, ui y una vista por pantalla
+            ├── index.html           # Catálogo
+            └── login.html           # Inicio de sesión
 ```
