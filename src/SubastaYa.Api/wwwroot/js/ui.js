@@ -23,6 +23,12 @@ const currencyFormatter = new Intl.NumberFormat("es-AR", {
     maximumFractionDigits: 0
 });
 
+const timeFormatter = new Intl.DateTimeFormat("es-AR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
+});
+
 const dateTimeFormatter = new Intl.DateTimeFormat("es-AR", {
     day: "2-digit",
     month: "2-digit",
@@ -33,6 +39,10 @@ const dateTimeFormatter = new Intl.DateTimeFormat("es-AR", {
 
 export function formatCurrency(value) {
     return currencyFormatter.format(Number(value ?? 0));
+}
+
+export function formatTime(isoDate) {
+    return timeFormatter.format(new Date(isoDate));
 }
 
 export function formatDateTime(isoDate) {

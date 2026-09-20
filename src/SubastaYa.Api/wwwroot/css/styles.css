@@ -72,6 +72,12 @@ a:hover {
     border-radius: var(--sy-radius);
 }
 
+.sy-panel-raised {
+    background: var(--sy-surface-raised);
+    border: 1px solid var(--sy-border);
+    border-radius: var(--sy-radius);
+}
+
 .sy-muted {
     color: var(--sy-text-muted);
 }
@@ -213,6 +219,85 @@ a:hover {
     50% { opacity: 0.45; }
 }
 
+.sy-clock-large {
+    font-size: 2.6rem;
+    letter-spacing: -1px;
+}
+
+.sy-metric-label {
+    color: var(--sy-text-muted);
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* ---------- Sala en vivo ---------- */
+
+.sy-indicator {
+    border-radius: var(--sy-radius);
+    padding: 0.85rem 1rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.sy-indicator-leading {
+    background: rgba(47, 191, 113, 0.14);
+    border: 1px solid rgba(47, 191, 113, 0.45);
+    color: #6ee7a8;
+}
+
+.sy-indicator-outbid {
+    background: rgba(239, 75, 92, 0.14);
+    border: 1px solid rgba(239, 75, 92, 0.45);
+    color: #ff97a2;
+}
+
+.sy-indicator-neutral {
+    background: rgba(152, 163, 184, 0.1);
+    border: 1px solid var(--sy-border);
+    color: var(--sy-text-muted);
+}
+
+.sy-history {
+    max-height: 22rem;
+    overflow-y: auto;
+}
+
+.sy-bid {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.7rem 0.9rem;
+    border-radius: 10px;
+    border: 1px solid transparent;
+}
+
+.sy-bid + .sy-bid {
+    margin-top: 0.4rem;
+}
+
+.sy-bid-own {
+    background: rgba(79, 124, 255, 0.12);
+    border-color: rgba(79, 124, 255, 0.4);
+}
+
+.sy-bid-other {
+    background: var(--sy-surface-raised);
+}
+
+/* Resalta la oferta que acaba de llegar por WebSocket. */
+.sy-bid-new {
+    animation: sy-flash 1.4s ease-out;
+}
+
+@keyframes sy-flash {
+    from { background: rgba(47, 191, 113, 0.35); }
+    to { background: inherit; }
+}
+
 /* ---------- Estados de carga y vacío ---------- */
 
 .sy-loading {
@@ -316,4 +401,8 @@ hr {
 
 code {
     color: #8fabff;
+}
+
+@media (max-width: 575.98px) {
+    .sy-clock-large { font-size: 2rem; }
 }
