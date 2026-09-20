@@ -3,12 +3,13 @@ using Microsoft.OpenApi.Models;
 using SubastaYa.Api.Middleware;
 using SubastaYa.Application;
 using SubastaYa.Infrastructure;
+using SubastaYa.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Composición de las capas: presentación -> aplicación -> infraestructura.
 builder.Services.AddApplicationLayer();
-builder.Services.AddInfrastructureLayer();
+builder.Services.AddInfrastructureLayer(builder.Configuration);
 
 builder.Services
     .AddControllers()
@@ -23,6 +24,9 @@ builder.Services.AddSwaggerGen(options => options.SwaggerDoc("v1", new OpenApiIn
 }));
 
 var app = builder.Build();
+
+// Migraciones y datos semilla antes de aceptar tráfico.
+await app.Services.PrepareDatabaseAsync();
 
 app.UseMiddleware<GlobalExceptionMiddleware>();
 
