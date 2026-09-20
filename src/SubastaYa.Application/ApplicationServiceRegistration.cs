@@ -10,6 +10,7 @@ public static class ApplicationServiceRegistration
     public static IServiceCollection AddApplicationLayer(this IServiceCollection services)
     {
         services.AddScoped<ICatalogService, CatalogService>();
+        services.AddScoped<IAuthenticationService, AuthenticationService>();
 
         return services;
     }

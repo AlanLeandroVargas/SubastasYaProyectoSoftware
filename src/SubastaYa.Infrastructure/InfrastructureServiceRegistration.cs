@@ -2,10 +2,12 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SubastaYa.Application.Abstractions.Persistence;
+using SubastaYa.Application.Abstractions.Security;
 using SubastaYa.Application.Abstractions.Time;
 using SubastaYa.Infrastructure.Persistence;
 using SubastaYa.Infrastructure.Persistence.Repositories;
 using SubastaYa.Infrastructure.Persistence.Seeding;
+using SubastaYa.Infrastructure.Security;
 using SubastaYa.Infrastructure.Time;
 
 namespace SubastaYa.Infrastructure;
@@ -24,10 +26,15 @@ public static class InfrastructureServiceRegistration
                 configuration.GetConnectionString("SubastaYa"),
                 sqlServer => sqlServer.MigrationsAssembly(typeof(SubastaYaDbContext).Assembly.FullName)));
 
+        services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));
+
         services.AddSingleton<IClock, SystemClock>();
+        services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
+        services.AddScoped<ITokenGenerator, JwtTokenGenerator>();
 
         services.AddScoped<IAuctionRepository, AuctionRepository>();
         services.AddScoped<ICategoryRepository, CategoryRepository>();
+        services.AddScoped<IUserRepository, UserRepository>();
 
         services.AddScoped<DatabaseSeeder>();
 

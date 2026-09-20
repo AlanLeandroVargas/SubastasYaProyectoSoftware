@@ -115,12 +115,14 @@ traspaso de liderazgo entre postores).
 Las rutas se apoyan en **sustantivos en plural y jerarquías de recursos**; no hay verbos en las
 URLs. Base: `/api/v1`.
 
-| Método | Ruta | Propósito |
-|---|---|---|
-| `GET` | `/health` | Sonda de disponibilidad |
-| `GET` | `/categories` | Listado de categorías |
-| `GET` | `/auctions` | Catálogo con filtros, orden y paginación |
-| `GET` | `/auctions/{id}` | Detalle de la subasta con su historial de ofertas |
+| Método | Ruta | Auth | Propósito |
+|---|---|:---:|---|
+| `GET` | `/health` | — | Sonda de disponibilidad |
+| `POST` | `/sessions` | — | Abrir sesión y obtener el token JWT |
+| `GET` | `/sessions/current` | ✔ | Perfil del usuario autenticado |
+| `GET` | `/categories` | — | Listado de categorías |
+| `GET` | `/auctions` | — | Catálogo con filtros, orden y paginación |
+| `GET` | `/auctions/{id}` | — | Detalle de la subasta con su historial de ofertas |
 
 **Filtros de `GET /auctions`**: `status` (`Active` · `Scheduled` · `Completed` · `Unsold`),
 `categoryId`, `minPrice`, `maxPrice`, `search`, `sort` (`EndingSoonest` · `HighestBid` ·
@@ -145,6 +147,55 @@ se muestra tal cual en pantalla:
 
 `GlobalExceptionMiddleware` es el único lugar donde se traduce una excepción de dominio a un
 código HTTP, de modo que un error de negocio nunca se degrada en un 500 genérico.
+
+---
+
+## Autenticación
+
+Autenticación **stateless con JWT**: la API no guarda sesiones en memoria, así que puede
+escalarse horizontalmente sin sesiones pegajosas.
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:5080/api/v1/sessions   -H "Content-Type: application/json"   -d '{"email":"comprador1@test.com","password":"Password123!"}'   | python -c "import sys,json;print(json.load(sys.stdin)['token'])")
+
+curl -s http://localhost:5080/api/v1/sessions/current -H "Authorization: Bearer $TOKEN"
+```
+
+En Swagger UI alcanza con el botón **Authorize** y pegar el token.
+
+### Decisiones
+
+* **Contraseñas con PBKDF2-SHA256**: 120.000 iteraciones, sal aleatoria por usuario y comparación
+  en tiempo constante, sin dependencias externas. El formato almacenado
+  (`iteraciones.sal.hash`) es autocontenido, de modo que se puede subir el costo de derivación
+  más adelante sin invalidar los hashes existentes.
+* **Respuesta uniforme ante el fallo**: usuario inexistente y contraseña incorrecta devuelven
+  exactamente el mismo `401`, para no revelar qué direcciones están registradas.
+* **`ClockSkew = TimeSpan.Zero`**: sin la tolerancia de 5 minutos que trae ASP.NET por defecto, la
+  expiración de la sesión es exacta.
+* **`ICurrentUser`** vive en la capa de aplicación y lo implementa la de presentación leyendo las
+  afirmaciones del token. Los casos de uso conocen al solicitante sin tocar `HttpContext`.
+* **El catálogo sigue siendo público**: sólo se protege lo que requiere identidad.
+
+> El registro de usuarios no está expuesto por API: la consigna define un conjunto fijo de
+> cuentas de prueba y todas se crean en la semilla.
+
+### Cuentas de prueba
+
+Todas usan la contraseña **`Password123!`**.
+
+| Email | Rol en la demo |
+|---|---|
+| `vendedor@test.com` | Publica las subastas del catálogo |
+| `comprador1@test.com` | Postor líder de la subasta activa |
+| `comprador2@test.com` | Ganador pendiente de liquidación |
+| `sinfondos@test.com` | Servirá para probar el rechazo por saldo |
+
+> Si ya tenías la base creada de antes, hay que **regenerarla** para que los usuarios queden con
+> su hash de contraseña; hasta esta funcionalidad se sembraban sin credenciales:
+> ```bash
+> dotnet ef database drop --force --project src/SubastaYa.Infrastructure --startup-project src/SubastaYa.Api
+> ```
 
 ---
 
@@ -211,8 +262,8 @@ minutos") y una semilla estática quedaría obsoleta apenas se genera.
 > adjudicó**. Cuando exista el proceso en segundo plano, esa garantía pasará al vendedor y la
 > cuenta quedará en $200.000 totales y disponibles.
 
-Las contraseñas quedan sin hash a propósito: la autenticación llega en su propia funcionalidad y
-hasta entonces el catálogo es completamente público.
+Todas las cuentas comparten la contraseña `Password123!`, ya hasheada con PBKDF2 por el
+sembrador.
 
 ### Subastas (casos de prueba de la consigna)
 
@@ -284,7 +335,7 @@ El desarrollo avanza por funcionalidad, una por *pull request*.
 - [x] Modelo de dominio y reglas de subasta
 - [x] Catálogo de subastas (API de lectura)
 - [x] Persistencia con EF Core, migraciones y datos semilla
-- [ ] Autenticación con JWT
+- [x] Autenticación con JWT
 - [ ] Billetera virtual y libro mayor
 - [ ] Registro de pujas con garantías atómicas y bloqueo optimista
 - [ ] Proceso en segundo plano de adjudicación
@@ -311,7 +362,7 @@ SubastasYaProyectoSoftware/
     │   ├── Rules/                   # Parámetros de anti-sniping
     │   └── Results/                 # BidPlacementResult
     ├── SubastaYa.Application/
-    │   ├── Abstractions/            # Puertos: persistencia y reloj
+    │   ├── Abstractions/            # Puertos: persistencia, seguridad y reloj
     │   ├── Dtos/                    # Contratos de entrada y salida
     │   ├── Mapping/                 # Entidad -> DTO
     │   ├── Common/                  # PagedResult
@@ -322,8 +373,11 @@ SubastasYaProyectoSoftware/
     │   │   ├── Migrations/          # Code-First
     │   │   ├── Repositories/
     │   │   └── Seeding/
+    │   ├── Security/                # PBKDF2 y emisión de JWT
     │   └── Time/                    # Reloj del sistema
     └── SubastaYa.Api/
+        ├── Configuration/           # Registro de servicios web
         ├── Controllers/
-        └── Middleware/              # Manejo global de excepciones
+        ├── Middleware/              # Manejo global de excepciones
+        └── Security/                # Usuario actual desde el token
 ```
