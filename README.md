@@ -110,6 +110,55 @@ traspaso de liderazgo entre postores).
 
 ---
 
+## API REST
+
+Las rutas se apoyan en **sustantivos en plural y jerarquías de recursos**; no hay verbos en las
+URLs. Base: `/api/v1`.
+
+| Método | Ruta | Propósito |
+|---|---|---|
+| `GET` | `/health` | Sonda de disponibilidad |
+| `GET` | `/categories` | Listado de categorías |
+| `GET` | `/auctions` | Catálogo con filtros, orden y paginación |
+| `GET` | `/auctions/{id}` | Detalle de la subasta con su historial de ofertas |
+
+**Filtros de `GET /auctions`**: `status` (`Active` · `Scheduled` · `Completed` · `Unsold`),
+`categoryId`, `minPrice`, `maxPrice`, `search`, `sort` (`EndingSoonest` · `HighestBid` ·
+`Newest`), `page`, `pageSize`.
+
+```bash
+curl -s "http://localhost:5080/api/v1/auctions?status=Active&sort=HighestBid"
+curl -s "http://localhost:5080/api/v1/auctions/1"
+```
+
+Los errores se devuelven como `ProblemDetails` (RFC 7807), con el mensaje ya en español porque
+se muestra tal cual en pantalla:
+
+```json
+{
+  "title": "Recurso inexistente",
+  "status": 404,
+  "detail": "No se encontró la subasta con identificador '999'.",
+  "instance": "/api/v1/auctions/999"
+}
+```
+
+`GlobalExceptionMiddleware` es el único lugar donde se traduce una excepción de dominio a un
+código HTTP, de modo que un error de negocio nunca se degrada en un 500 genérico.
+
+### Persistencia provisional
+
+El catálogo se sirve hoy desde un **conjunto de datos en memoria**
+(`Persistence/InMemory/InMemoryCatalogStore`) que cubre los cinco casos de prueba de la consigna
+y los cuatro estados posibles. Es deliberado: permite cerrar el contrato de la API y validar los
+filtros, el orden y el paginado antes de incorporar Entity Framework Core.
+
+Cuando llegue la persistencia real sólo cambia el registro de dos puertos en
+`InfrastructureServiceRegistration`; ni el dominio, ni los casos de uso, ni los controladores se
+enteran del cambio.
+
+---
+
 ## Puesta en marcha
 
 ### Requisitos
@@ -128,11 +177,7 @@ dotnet run --project src/SubastaYa.Api
 |---|---|
 | Swagger UI | <http://localhost:5080/swagger> |
 | Health check | <http://localhost:5080/api/v1/health> |
-
-```bash
-curl -s http://localhost:5080/api/v1/health
-# {"status":"ok","checkedAtUtc":"2026-09-20T12:00:00.0000000Z"}
-```
+| Catálogo | <http://localhost:5080/api/v1/auctions> |
 
 ---
 
@@ -142,7 +187,7 @@ El desarrollo avanza por funcionalidad, una por *pull request*.
 
 - [x] Estructura de la solución en capas y health check
 - [x] Modelo de dominio y reglas de subasta
-- [ ] Catálogo de subastas (API de lectura)
+- [x] Catálogo de subastas (API de lectura, con persistencia en memoria)
 - [ ] Persistencia con EF Core, migraciones y datos semilla
 - [ ] Autenticación con JWT
 - [ ] Billetera virtual y libro mayor
@@ -169,7 +214,16 @@ SubastasYaProyectoSoftware/
     │   ├── Exceptions/              # Jerarquía de errores de negocio
     │   ├── Rules/                   # Parámetros de anti-sniping
     │   └── Results/                 # BidPlacementResult
-    ├── SubastaYa.Application/       # Casos de uso y puertos
-    ├── SubastaYa.Infrastructure/    # Implementación de los puertos
-    └── SubastaYa.Api/               # Controladores REST y hosting
+    ├── SubastaYa.Application/
+    │   ├── Abstractions/            # Puertos: persistencia y reloj
+    │   ├── Dtos/                    # Contratos de entrada y salida
+    │   ├── Mapping/                 # Entidad -> DTO
+    │   ├── Common/                  # PagedResult
+    │   └── Services/                # Casos de uso
+    ├── SubastaYa.Infrastructure/
+    │   ├── Persistence/InMemory/    # Persistencia provisional
+    │   └── Time/                    # Reloj del sistema
+    └── SubastaYa.Api/
+        ├── Controllers/
+        └── Middleware/              # Manejo global de excepciones
 ```

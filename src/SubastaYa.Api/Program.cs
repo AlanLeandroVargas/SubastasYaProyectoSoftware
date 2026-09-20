@@ -1,8 +1,19 @@
+using System.Text.Json;
 using Microsoft.OpenApi.Models;
+using SubastaYa.Api.Middleware;
+using SubastaYa.Application;
+using SubastaYa.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
+// Composición de las capas: presentación -> aplicación -> infraestructura.
+builder.Services.AddApplicationLayer();
+builder.Services.AddInfrastructureLayer();
+
+builder.Services
+    .AddControllers()
+    .AddJsonOptions(options => options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase);
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options => options.SwaggerDoc("v1", new OpenApiInfo
 {
@@ -12,6 +23,8 @@ builder.Services.AddSwaggerGen(options => options.SwaggerDoc("v1", new OpenApiIn
 }));
 
 var app = builder.Build();
+
+app.UseMiddleware<GlobalExceptionMiddleware>();
 
 app.UseSwagger();
 app.UseSwaggerUI(options =>
