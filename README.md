@@ -666,6 +666,66 @@ restricción que el negocio no tiene.
 En los dos casos el campo pasó a `step="any"`: el mínimo se sigue validando y el incremento se
 comunica en el texto de ayuda, que es donde corresponde.
 
+## Prueba de concurrencia
+
+Hay dos scripts equivalentes en `scripts/`, uno para PowerShell y otro para Bash. Ambos hacen lo
+mismo en dos fases y devuelven código de salida 0 sólo si todo se cumple.
+
+```bash
+# Con la aplicación corriendo en otra terminal
+./scripts/concurrency-test.sh                                  # Bash
+powershell -ExecutionPolicy Bypass -File ./scripts/concurrency-test.ps1   # PowerShell
+```
+
+**Fase 1 — ráfaga.** Dispara N pujas idénticas en paralelo desde un mismo proceso, sobre una
+conexión ya establecida y con una petición de calentamiento previa, para que lleguen al servidor
+prácticamente en el mismo milisegundo. Se espera que se registre **exactamente una** y que el
+resto se rechace con `409`, por dos mecanismos que conviven:
+
+| Rechazo | Qué pasó |
+|---|---|
+| `Conflicto de concurrencia` | Dos transacciones leyeron la misma versión de la fila y el `rowversion` invalidó a la más lenta. Bloqueo optimista puro. |
+| `Conflicto con el estado actual` | La petición perdedora alcanzó a leer el estado ya actualizado y la regla de negocio la frenó antes de escribir. |
+
+La proporción entre ambos varía de corrida a corrida según cómo se solapen los hilos, y eso es
+esperable: lo que no varía es que gane una sola.
+
+**Fase 2 — integridad.** Que gane una sola puja no alcanza; hay que comprobar que la ráfaga no
+descuadró el dinero. Sobre las cuatro cuentas de prueba se verifica que:
+
+* el libro mayor de cada billetera **reconstruya** su saldo total y su retenido;
+* la garantía viva de la subasta (`HOLD` − `RELEASE` − `PAYMENT`) sea **igual al importe líder**,
+  es decir que sólo el líder tenga fondos congelados y por el monto exacto;
+* las pujas nuevas coincidan con la cantidad de respuestas `201`;
+* el dinero del sistema se conserve: lo depositado sea igual a la suma de los saldos.
+
+Los scripts **se configuran solos**: eligen la cuenta que no lidera, acreditan fondos si hacen
+falta y toman el mínimo vigente, así pueden ejecutarse varias veces seguidas.
+
+### Corrida real
+
+```
+Resultado de la rafaga:
+   11 peticion(es) -> HTTP 409, Conflicto de concurrencia
+    1 peticion(es) -> HTTP 201, PUJA ACEPTADA
+
+Verificacion de integridad:
+  vendedor@test.com      total      30.000,00  retenido         0,00
+  comprador1@test.com    total     150.000,00  retenido    55.000,00
+  comprador2@test.com    total     200.000,00  retenido         0,00
+  sinfondos@test.com     total         500,00  retenido         0,00
+
+  garantia viva de la subasta 1 : 55.000,00  (importe lider 55.000,00)
+  depositado en el sistema        : 380.500,00
+  suma de saldos                  : 380.500,00
+
+OK: se registro exactamente 1 puja, se rechazaron 11 con HTTP 409
+    y las invariantes economicas se mantienen intactas.
+```
+
+En la corrida siguiente, con la otra cuenta y el mínimo ya en $60.000, la mezcla fue distinta
+—3 conflictos de concurrencia y 8 de estado— y el veredicto, el mismo.
+
 ---
 
 ## Persistencia
@@ -849,7 +909,7 @@ El desarrollo avanza por funcionalidad, una por *pull request*.
 - [x] Frontend: catálogo e inicio de sesión
 - [x] Frontend: sala en vivo
 - [x] Frontend: publicación, billetera y actividad
-- [ ] Prueba de concurrencia
+- [x] Prueba de concurrencia y documentación final
 
 ---
 
@@ -860,6 +920,7 @@ SubastasYaProyectoSoftware/
 ├── SubastaYa.sln
 ├── Directory.Build.props            # TargetFramework y opciones comunes
 ├── .config/dotnet-tools.json        # dotnet-ef fijado por versión
+├── scripts/                         # Prueba de concurrencia (PowerShell y Bash)
 ├── tests/
 │   └── SubastaYa.Domain.Tests/      # Pruebas unitarias del dominio (xUnit)
 └── src/

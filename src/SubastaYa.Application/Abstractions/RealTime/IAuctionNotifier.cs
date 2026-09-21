@@ -6,8 +6,9 @@ namespace SubastaYa.Application.Abstractions.RealTime;
 /// Canal de difusión hacia la sala de subasta en vivo. La capa de aplicación publica eventos de
 /// negocio sin saber si por debajo hay WebSockets, SignalR o cualquier otro transporte.
 ///
-/// Declarar el puerto ahora permite que el caso de uso quede completo aunque el transporte real
-/// todavía no exista: hoy lo satisface una implementación que sólo deja traza en el log.
+/// El puerto se declaró antes de que existiera el transporte, y eso permitió que el caso de uso
+/// de pujas quedara completo con una implementación que sólo dejaba traza en el log. Cambiarla
+/// por SignalR consistió en registrar otra implementación: nada de esta capa se modificó.
 /// </summary>
 public interface IAuctionNotifier
 {
